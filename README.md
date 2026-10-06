@@ -1,22 +1,25 @@
-# MYchat Easy for Android
+# MYchat Easy
 
-Translate, rewrite, write and reply in any app, with your own AI key (Gemini and Groq are free).
-By Digital Aid IT.
+Translate, rewrite, write and reply in any text box, in any language, with your own AI key
+(Gemini and Groq are free; Claude, OpenAI and any OpenAI-compatible API also work).
+By [Digital Aid IT](https://digitalaidit.com).
 
-## How it works
-- Select text in any app (WhatsApp, Messenger, Gmail…) and choose **MYchat Easy** from the menu
-  (tap ⋮ if you don't see it). A panel opens with Translate, Rewrite, Write and Reply.
-  **Replace** puts the result back into your message where the app allows it, otherwise **Copy**.
-- Share any text to MYchat Easy from the share menu.
-- Open the app for the full tool: type, paste or speak, then translate or write.
+## What's in this repository
 
-## Build the APK with GitHub (no Android Studio needed)
-1. Create a new repository on GitHub and upload all files in this folder, including `.github`.
-2. Open the **Actions** tab. The "Build APK" workflow runs automatically (or click **Run workflow**).
-3. When it finishes (about 5 minutes), open the run and download **MYchat-Easy-APK** under Artifacts.
-4. Unzip it and install `app-debug.apk` on your phone (allow "Install unknown apps" when asked).
+| Folder | What it is |
+| --- | --- |
+| `app/` | Android app (floating bubble in every app, selection menu, share menu, voice, read aloud) |
+| `chrome-extension/` | Chrome extension (button next to every text box on the web) |
+| `store-assets/` | Chrome Web Store images and the privacy policy page |
 
-## Build with Android Studio
-Open this folder in Android Studio and press Run.
+## Android: get the APK
+Every push builds the app automatically. Open the **Actions** tab, open the latest green run and
+download **MYchat-Easy-APK** under Artifacts. Install `app-debug.apk` on your phone.
 
-Requirements: Android 8.0 or newer. No extra libraries are used.
+Turn on the bubble from the app's Home tab. On Android 13 and newer, if the switch is locked:
+App info › ⋮ › **Allow restricted settings**, then turn on **MYchat Easy bubble** in Accessibility.
+
+## Chrome: install or publish
+See [`chrome-extension/README.md`](chrome-extension/README.md).
+
+Support: support@digitalaidit.com
