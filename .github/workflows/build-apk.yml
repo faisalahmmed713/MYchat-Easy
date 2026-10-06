@@ -1,0 +1,48 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip the project if it was uploaded as a zip
+        run: |
+          for z in *.zip; do
+            if [ -f "$z" ]; then
+              echo "Unzipping $z"
+              unzip -o -q "$z"
+            fi
+          done
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build the APK
+        run: |
+          APP=$(find . -path "*/app/build.gradle.kts" -not -path "./.git/*" | head -n 1)
+          if [ -z "$APP" ]; then
+            echo "The app folder was not found. Upload mychat-easy-android.zip to the repository."
+            exit 1
+          fi
+          cd "$(dirname "$(dirname "$APP")")"
+          echo "Building in: $(pwd)"
+          gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MYchat-Easy-APK
+          path: "**/app/build/outputs/apk/debug/*.apk"
