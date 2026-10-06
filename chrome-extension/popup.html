@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MYchat Easy</title>
+<style>
+  :root{
+    --bg:#F3F4F9;--panel:#FFFFFF;--ink:#121527;--muted:#6A7088;--line:#E4E6EF;--soft:#F6F7FB;--hover:#EEF0FF;
+    --brand:#3B4BFF;--brand2:#7C3AED;--on:#FFFFFF;--ok:#10A35A;--err:#D12A3B;--focus:#3B4BFF;
+    --grad:linear-gradient(135deg,#2E54FF,#7C3AED);
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --bg:#0F111A;--panel:#171A26;--ink:#E9EBF5;--muted:#99A0B8;--line:#272C3F;--soft:#1E2232;--hover:#252A40;
+    --brand:#8391FF;--brand2:#A78BFA;--on:#0E1020;--ok:#3DD68C;--err:#FF6B7A;--focus:#8391FF;
+  }}
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{width:370px;height:590px;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);
+    font-family:Inter,"Segoe UI",system-ui,-apple-system,"Noto Sans",sans-serif;font-size:13.5px;line-height:1.45}
+  button{font-family:inherit}
+  [hidden]{display:none!important}
+  svg{flex:none}
+  .ico{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+  /* header */
+  .top{display:flex;align-items:center;gap:10px;padding:14px 14px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .top img{width:34px;height:34px}
+  .title{flex:1;min-width:0}
+  .title b{display:block;font-size:15.5px;letter-spacing:-.01em}
+  .title span{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .site{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+  .site b{color:var(--ink);font-weight:600}
+
+  /* switch */
+  .switch{position:relative;display:inline-flex;flex:none;cursor:pointer}
+  .switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+  .track{width:36px;height:21px;border-radius:999px;background:var(--line);transition:background .15s;position:relative}
+  .track::after{content:"";position:absolute;top:2.5px;left:2.5px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .switch input:checked + .track{background:var(--brand)}
+  .switch input:checked + .track::after{transform:translateX(15px)}
+  .switch input:focus-visible + .track{outline:2px solid var(--focus);outline-offset:2px}
+  .switch input:disabled + .track{opacity:.45}
+
+  /* nav */
+  .nav{display:grid;grid-template-columns:repeat(5,1fr);gap:2px;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .nav button{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0 5px;border-radius:10px;color:var(--muted);font-size:11px;font-weight:500}
+  .nav button:hover{background:var(--hover)}
+  .nav button[aria-selected="true"]{color:var(--brand);background:var(--hover);font-weight:600}
+  .nav button:focus-visible{outline:2px solid var(--focus)}
+
+  main{flex:1;overflow:auto;padding:12px 12px 16px}
+  section{display:flex;flex-direction:column;gap:10px}
+  .label{font-size:11.5px;font-weight:600;color:var(--muted);padding:4px 4px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:11px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field > .fl{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted);font-weight:500}
+  input[type=text],input[type=password],input[type=url],input[type=number],select,textarea{
+    font:inherit;font-size:13px;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:8px 10px;width:100%;min-width:0}
+  textarea{resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--focus);box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 20%,transparent)}
+  a{color:var(--brand);text-decoration:none} a:hover{text-decoration:underline}
+  .note{font-size:11.5px;color:var(--muted);margin:0;line-height:1.5}
+  .row{display:flex;gap:8px;align-items:center}
+  .row > *{min-width:0}
+
+  .inwrap{position:relative;display:flex}
+  .inwrap input{padding-right:38px}
+  .iconbtn{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;color:var(--muted)}
+  .iconbtn:hover{background:var(--hover);color:var(--ink)}
+  .iconbtn:focus-visible{outline:2px solid var(--focus)}
+  .inwrap .iconbtn{position:absolute;right:3px;top:50%;transform:translateY(-50%)}
+  .iconbtn.spin svg{animation:r .8s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+
+  .btn{all:unset;box-sizing:border-box;cursor:pointer;text-align:center;font-size:13px;font-weight:600;padding:8px 14px;border-radius:9px;flex:none}
+  .btn.primary{background:var(--grad);color:#fff}
+  .btn.ghost{border:1px solid var(--line);color:var(--ink)}
+  .btn.ghost:hover{background:var(--hover)}
+  .btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+  .btn[disabled]{opacity:.6;cursor:wait}
+  .link{all:unset;cursor:pointer;font-size:12px;color:var(--muted)}
+  .link:hover{color:var(--ink);text-decoration:underline}
+  .link.danger:hover{color:var(--err)}
+  .status{font-size:12px;flex:1;min-width:0;overflow-wrap:anywhere}
+  .status.ok{color:var(--ok)} .status.err{color:var(--err)}
+
+  /* provider list */
+  .plist{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .prow{all:unset;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+  .prow:first-child{border-top:0}
+  .prow:hover{background:var(--soft)}
+  .prow:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+  .radio{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center}
+  .prow[aria-checked="true"] .radio{border-color:var(--brand)}
+  .prow[aria-checked="true"] .radio::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--brand)}
+  .pname{flex:1;font-weight:600;font-size:13.5px}
+  .pname small{display:block;font-weight:400;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}
+  .badge{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--soft);color:var(--muted);border:1px solid var(--line)}
+  .badge.free{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok);border-color:transparent}
+  .kdot{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+  .kdot.on{background:var(--ok)}
+
+  /* segmented */
+  .seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+  .seg button{all:unset;cursor:pointer;text-align:center;padding:6px 4px;border-radius:7px;font-size:12.5px;color:var(--muted)}
+  .seg button[aria-pressed="true"]{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(18,21,39,.12)}
+  .seg button:focus-visible{outline:2px solid var(--focus)}
+
+  /* chips */
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:5px 10px;border-radius:999px;background:var(--soft);border:1px solid var(--line)}
+  .chip:hover{border-color:var(--err)}
+  .chip .n{font-size:10.5px;font-weight:700;color:var(--muted)}
+  .chip .x{font-size:10px;color:var(--muted)}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .stat{background:var(--soft);border-radius:10px;padding:8px 10px}
+  .stat b{display:block;font-size:16px;letter-spacing:-.01em}
+  .stat span{font-size:11px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  td{padding:5px 2px;border-top:1px solid var(--line);text-align:right}
+  td:first-child{text-align:left}
+  tr:first-child td{border-top:0}
+
+  /* toggles list */
+  .tlist{display:flex;flex-direction:column}
+  .trow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+  .trow:first-child{border-top:0;padding-top:0}
+  .trow:last-child{padding-bottom:0}
+  .trow b{display:block;font-weight:600;font-size:13px}
+  .trow span{display:block;font-size:11.5px;color:var(--muted)}
+
+  .keys{display:grid;grid-template-columns:auto 1fr;gap:7px 12px;font-size:12.5px;align-items:center}
+  kbd{font:inherit;font-size:11px;font-weight:600;background:var(--soft);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;white-space:nowrap}
+
+  /* lists */
+  .entry{display:flex;flex-direction:column;gap:4px;padding:10px 0;border-top:1px solid var(--line)}
+  .entry:first-child{border-top:0;padding-top:0}
+  .entry:last-child{padding-bottom:0}
+  .entry .top2{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  .entry .top2 b{color:var(--ink);font-weight:600}
+  .entry .txt{font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .acts{display:flex;gap:10px;align-items:center}
+  .empty{font-size:12.5px;color:var(--muted);text-align:center;padding:14px 6px}
+  .slash{font-weight:700;color:var(--muted)}
+  @media (prefers-reduced-motion: reduce){ .track,.track::after{transition:none} .iconbtn.spin svg{animation-duration:2s} }
+</style>
+</head>
+<body>
+<header class="top">
+  <img src="icons/icon48.png" alt="">
+  <div class="title"><b>MYchat Easy</b><span id="activeLine">—</span></div>
+  <label class="switch" title="Turn MYchat Easy on or off"><input type="checkbox" id="enabled" aria-label="Enabled"><span class="track"></span></label>
+</header>
+<div class="site"><span id="siteText">Not available on this page</span><label class="switch"><input type="checkbox" id="siteOn" aria-label="On this site"><span class="track"></span></label></div>
+
+<nav class="nav" role="tablist">
+  <button role="tab" data-p="ai" aria-selected="true">
+    <svg class="ico" viewBox="0 0 24 24"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>AI</button>
+  <button role="tab" data-p="lang" aria-selected="false">
+    <svg class="ico" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>Language</button>
+  <button role="tab" data-p="feat" aria-selected="false">
+    <svg class="ico" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>Features</button>
+  <button role="tab" data-p="tpl" aria-selected="false">
+    <svg class="ico" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>Templates</button>
+  <button role="tab" data-p="hist" aria-selected="false">
+    <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>History</button>
+</nav>
+
+<main>
+  <!-- AI -->
+  <section id="p-ai">
+    <div class="label">Choose your AI</div>
+    <div class="plist" id="plist" role="radiogroup" aria-label="AI provider"></div>
+
+    <div class="card" id="provCard">
+      <div class="field" id="baseWrap" hidden>
+        <div class="fl">Base URL (OpenAI-compatible)</div>
+        <input id="base" type="url" placeholder="https://openrouter.ai/api/v1">
+      </div>
+      <div class="field">
+        <div class="fl"><span>API key</span><a id="keyLink" href="#" target="_blank" rel="noopener">Get a key ↗</a></div>
+        <div class="inwrap">
+          <input id="key" type="password" placeholder="Paste your API key" autocomplete="off" spellcheck="false">
+          <button class="iconbtn" id="eye" title="Show or hide key" aria-label="Show key">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="fl"><span>Model</span>
+          <button class="link" id="refreshModels" title="Load the latest models from this provider">↻ Load latest models</button></div>
+        <select id="modelSel" aria-label="Model"></select>
+        <input id="modelCustom" type="text" placeholder="Type a model name, e.g. gemini-3.8-pro" spellcheck="false" hidden>
+      </div>
+      <div class="row"><button class="btn primary" id="testBtn">Test connection</button><span class="status" id="status" role="status"></span></div>
+      <p class="note" id="providerNote"></p>
+    </div>
+
+    <div class="label">This month</div>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><b id="sUses">0</b><span>Uses</span></div>
+        <div class="stat"><b id="sTok">0</b><span>Tokens</span></div>
+        <div class="stat"><b id="sCost">—</b><span>Est. cost</span></div>
+      </div>
+      <table><tbody id="usageBody"></tbody></table>
+      <div class="row">
+        <div class="field" style="flex:1"><div class="fl">Currency</div><input id="currency" type="text" maxlength="3" placeholder="USD"></div>
+        <div class="field" style="flex:1.3" id="rateWrap"><div class="fl">Rate per 1 USD</div><input id="rate" type="number" min="0" step="any" placeholder="1"></div>
+      </div>
+      <div class="row" style="justify-content:space-between">
+        <p class="note">Token counts are exact. Costs are estimates.</p>
+        <button class="link danger" id="resetBtn">Reset</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Language -->
+  <section id="p-lang" hidden>
+    <div class="label">Your languages</div>
+    <div class="card">
+      <div class="chips" id="langChips"></div>
+      <div class="row">
+        <input id="langInput" type="text" placeholder="Add a language, e.g. Spanish" list="langSuggest">
+        <button class="btn ghost" id="langAdd">Add</button>
+      </div>
+      <datalist id="langSuggest"></datalist>
+      <p class="note">The number on each language is its shortcut: Alt+Shift+1, Alt+Shift+2… Click a language to remove it.</p>
+    </div>
+    <div class="label">Translation</div>
+    <div class="card">
+      <div class="field"><div class="fl">Auto translate switches between</div>
+        <div class="row"><select id="pairA" aria-label="First language"></select><span class="note">⇄</span><select id="pairB" aria-label="Second language"></select></div>
+      </div>
+      <div class="field"><div class="fl">Your language (for messages you select on a page)</div><select id="myLang"></select></div>
+      <div class="field"><div class="fl">Tone for translating and writing</div>
+        <div class="seg" id="toneSeg"></div></div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="p-feat" hidden>
+    <div class="label">Features</div>
+    <div class="card tlist">
+      <div class="trow"><div><b>Preview before inserting</b><span>See the result first, then Replace, Copy or Try again</span></div>
+        <label class="switch"><input type="checkbox" id="preview"><span class="track"></span></label></div>
+      <div class="trow"><div><b>Toolbar on selected text</b><span>Translate, reply ideas and listen for messages you select</span></div>
+        <label class="switch"><input type="checkbox" id="selbar"><span class="track"></span></label></div>
+      <div class="trow"><div><b>Mic button</b><span>Shows next to text boxes for voice typing</span></div>
+        <label class="switch"><input type="checkbox" id="micButton"><span class="track"></span></label></div>
+      <div class="trow"><div><b>Save history</b><span>Keeps your last 50 results on this device</span></div>
+        <label class="switch"><input type="checkbox" id="saveHistory"><span class="track"></span></label></div>
+    </div>
+    <div class="label">Voice engine</div>
+    <div class="card">
+      <div class="seg" id="voiceSeg"></div>
+      <p class="note" id="voiceNote"></p>
+    </div>
+    <div class="label">Keyboard shortcuts</div>
+    <div class="card">
+      <div class="keys">
+        <kbd>Alt+Shift+A</kbd><span>Auto translate the text box</span>
+        <kbd>Alt+Shift+1–9</kbd><span>Translate to language 1–9</span>
+        <kbd>Alt+Shift+W</kbd><span>Write with your last settings</span>
+        <kbd>Alt+Shift+V</kbd><span>Start or stop voice input</span>
+        <kbd>/name Space</kbd><span>Insert a saved template</span>
+        <kbd>Esc</kbd><span>Close the MYchat Easy panel</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Templates -->
+  <section id="p-tpl" hidden>
+    <div class="label">Saved templates</div>
+    <div class="card" id="tplList"></div>
+    <div class="label" id="tplFormTitle">Add a template</div>
+    <div class="card">
+      <div class="field"><div class="fl">Shortcut</div>
+        <div class="row"><span class="slash">/</span><input id="tplKey" type="text" maxlength="30" placeholder="thanks" spellcheck="false"></div></div>
+      <div class="field"><div class="fl">Text</div>
+        <textarea id="tplText" rows="4" placeholder="Thanks for reaching out! I'll get back to you shortly."></textarea></div>
+      <div class="row"><button class="btn primary" id="tplSave">Save template</button><span class="status" id="tplStatus"></span></div>
+      <p class="note">In any text box, type / and the shortcut, then press Space.</p>
+    </div>
+  </section>
+
+  <!-- History -->
+  <section id="p-hist" hidden>
+    <div class="row" style="justify-content:space-between;padding:0 4px"><div class="label" style="padding:0">Recent results</div><button class="link danger" id="histClear">Clear all</button></div>
+    <div class="card" id="histList"></div>
+  </section>
+</main>
+<script src="providers.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>
