@@ -78,6 +78,15 @@ class Store(ctx: Context) {
         get() = str("tone", "natural")
         set(v) = put("tone", v)
 
+    // ---------- floating bubble ----------
+    var bubbleOn: Boolean
+        get() = sp.getBoolean("bubbleOn", true)
+        set(v) = sp.edit().putBoolean("bubbleOn", v).apply()
+
+    var bubbleHidden: Set<String>
+        get() = list(arr("bubbleHidden")).toSet()
+        set(v) = put("bubbleHidden", JSONArray(v.toList()).toString())
+
     // ---------- small UI memory ----------
     fun ui(k: String, d: String): String = obj("ui").optString(k, d)
     fun setUi(k: String, v: String) = put("ui", obj("ui").put(k, v).toString())

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bubble_label">MYchat Easy bubble</string>
+    <string name="bubble_summary">Shows a translate and writing bubble next to text boxes</string>
+    <string name="bubble_description">Shows the MYchat Easy bubble next to the text box you are typing in, in any app. When you tap the bubble, MYchat Easy reads only that text box so you can translate, rewrite or reply, and when you tap Replace it puts the result back. Password fields are always ignored. Your text is sent only to the AI provider you choose, only when you pick an action. Nothing else on your screen is read, stored or shared.</string>
+</resources>

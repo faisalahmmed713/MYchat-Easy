@@ -25,12 +25,15 @@ class ProcessTextActivity : Activity(), VoiceHost {
         val s = Store(this)
 
         val action = intent?.action
+        val fromBubble = action == ACTION_BUBBLE
         val text = when (action) {
             Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            ACTION_BUBBLE -> intent.getStringExtra(EXTRA_TEXT)
             else -> null
         } ?: ""
-        val canReplace = action == Intent.ACTION_PROCESS_TEXT && !intent.getBooleanExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, false)
+        val canReplace = fromBubble ||
+            (action == Intent.ACTION_PROCESS_TEXT && !intent.getBooleanExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, false))
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(0x80000000.toInt())
@@ -78,7 +81,13 @@ class ProcessTextActivity : Activity(), VoiceHost {
 
         val panel = ToolPanel(
             this, s, text,
-            if (canReplace) { result -> setResult(RESULT_OK, Intent().putExtra(Intent.EXTRA_PROCESS_TEXT, result)); finish() } else null,
+            if (!canReplace) null
+            else if (fromBubble) { result ->
+                val svc = BubbleService.instance
+                if (svc != null) svc.replaceText(result) else { copyText(this, result); toast(this, "Copied. Long-press the text box and tap Paste.") }
+                finish()
+            }
+            else { result -> setResult(RESULT_OK, Intent().putExtra(Intent.EXTRA_PROCESS_TEXT, result)); finish() },
             this
         ) { v -> scroll.post { scroll.smoothScrollTo(0, (v.top + (v.parent as View).top - dp(12)).coerceAtLeast(0)) } }
         body.add(panel.view, 4)
@@ -97,6 +106,11 @@ class ProcessTextActivity : Activity(), VoiceHost {
     override fun onDestroy() {
         Speaker.stop()
         super.onDestroy()
+    }
+
+    companion object {
+        const val ACTION_BUBBLE = "com.digitalaidit.mychateasy.BUBBLE"
+        const val EXTRA_TEXT = "text"
     }
 
     override fun startVoice(langName: String, onText: (String) -> Unit) {

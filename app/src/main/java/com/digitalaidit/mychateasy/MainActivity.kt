@@ -73,9 +73,75 @@ class MainActivity : Activity(), VoiceHost {
         render()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::content.isInitialized && (tab == "home" || tab == "more")) render()
+    }
+
     override fun onDestroy() {
         Speaker.stop()
         super.onDestroy()
+    }
+
+    // ---------- floating bubble ----------
+    private fun bubbleCard(): LinearLayout {
+        val c = card(this)
+        val on = BubbleService.isEnabled(this)
+        val head = hbox(this)
+        head.add(text(this, "Floating bubble", 16f, C.ink, true), 0, 0, 1f)
+        val pill = text(this, if (on) "ON" else "OFF", 11f, if (on) C.ok else C.muted, true).apply {
+            background = rounded(this@MainActivity, C.soft, 99, C.line)
+            setPadding(dp(9), dp(3), dp(9), dp(3))
+        }
+        head.add(pill, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
+        c.add(head)
+        if (on) {
+            c.add(text(this, "Tap any text box in any app and the MYchat Easy bubble appears next to it. Tap the bubble to translate, rewrite or reply, then Replace. Long-press the bubble to hide it in that app.", 13.5f, C.muted), 6)
+            val sw = Switch(this).apply {
+                text = "Show the bubble"
+                setTextColor(C.ink)
+                isChecked = s.bubbleOn
+                setOnCheckedChangeListener { _, v -> s.bubbleOn = v }
+            }
+            c.add(sw, 10)
+        } else {
+            c.add(text(this, "Turn it on once and a MYchat Easy bubble appears next to the text box in WhatsApp, Messenger, Facebook and every other app.", 13.5f, C.muted), 6)
+            c.add(primary(this, "Turn on the bubble") { showBubbleDisclosure() }, 12)
+        }
+        return c
+    }
+
+    private fun showBubbleDisclosure() {
+        AlertDialog.Builder(this)
+            .setTitle("Allow the MYchat Easy bubble")
+            .setMessage(
+                "MYchat Easy uses Android's Accessibility service to:\n\n" +
+                "• notice when you tap a text box, so it can show the bubble next to it\n" +
+                "• read that text box only when you tap the bubble\n" +
+                "• put the result back when you tap Replace\n\n" +
+                "Password fields are always ignored. Your text goes only to the AI you chose, only when you pick an action. Nothing else on your screen is read, stored or shared.\n\n" +
+                "On the next screen, open Installed apps (or Downloaded apps), tap MYchat Easy bubble and turn it on."
+            )
+            .setPositiveButton("Continue") { _, _ -> openAccessibilitySettings() }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    private fun openAccessibilitySettings() {
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            toast(this, "Find MYchat Easy bubble and turn it on")
+        } catch (e: ActivityNotFoundException) {
+            toast(this, "Open Settings › Accessibility and turn on MYchat Easy bubble")
+        }
+    }
+
+    private fun openAppInfo() {
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        } catch (e: ActivityNotFoundException) {
+            toast(this, "Open Settings › Apps › MYchat Easy")
+        }
     }
 
     // ---------- voice ----------
@@ -144,10 +210,11 @@ class MainActivity : Activity(), VoiceHost {
             setPadding(dp(16), dp(14), dp(16), dp(14))
         }
         tip.add(text(this, "Works in every app", 16f, Color.WHITE, true))
-        tip.add(text(this, "Select text in WhatsApp, Messenger, Gmail or any app, tap ⋮ in the menu and choose MYchat Easy.", 13.5f, 0xE6FFFFFF.toInt()), 4)
+        tip.add(text(this, "Turn on the floating bubble below and it appears next to the text box in any app.", 13.5f, 0xE6FFFFFF.toInt()), 4)
         tip.isClickable = true
         tip.setOnClickListener { tab = "more"; render() }
         content.add(tip)
+        if (!BubbleService.isEnabled(this)) content.add(bubbleCard(), 12)
 
         if (Config.ORDER.none { s.hasKey(it) }) {
             val warn = card(this)
@@ -395,13 +462,38 @@ class MainActivity : Activity(), VoiceHost {
 
     // ---------- More ----------
     private fun renderMore() {
-        section("Use it in any app")
+        section("Floating bubble")
+        content.add(bubbleCard(), 8)
+        val hidden = s.bubbleHidden
+        if (hidden.isNotEmpty()) {
+            val hc = card(this)
+            hc.add(text(this, "Hidden in these apps", 14.5f, C.ink, true))
+            hidden.sorted().forEach { pkg ->
+                val name = try { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { pkg }
+                val row = hbox(this)
+                row.add(text(this, name, 14f), 0, 0, 1f)
+                row.add(link(this, "Show again") { s.bubbleHidden = s.bubbleHidden - pkg; render() }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
+                hc.add(row, 6)
+            }
+            content.add(hc, 8)
+        }
+        if (!BubbleService.isEnabled(this)) {
+            val help = card(this)
+            help.add(text(this, "Can't turn it on?", 14.5f, C.ink, true))
+            help.add(text(this, "On Android 13 and newer, apps installed from an APK need one extra step: open App info, tap ⋮ (top right), choose Allow restricted settings, then turn on MYchat Easy bubble in Accessibility.", 13.5f, C.muted), 4)
+            val row = flow(this)
+            row.addView(ghost(this, "Open App info") { openAppInfo() })
+            row.addView(ghost(this, "Open Accessibility") { openAccessibilitySettings() })
+            help.add(row, 10)
+            content.add(help, 8)
+        }
+
+        section("Other ways to use it")
         val how = card(this)
         listOf(
-            "1" to "Open WhatsApp, Messenger, Gmail or any app and type or long-press a message.",
-            "2" to "Select the text. In the menu that appears, tap MYchat Easy (or ⋮ first if you don't see it).",
-            "3" to "Pick Translate, Rewrite, Write or Reply. Tap Replace to put the result back in your message, or Copy.",
-            "Tip" to "You can also Share any text to MYchat Easy from the share menu."
+            "1" to "Select text in any app, then tap MYchat Easy in the menu (tap ⋮ first if you don't see it). Not every app shows this option.",
+            "2" to "Share any text to MYchat Easy from the share menu.",
+            "3" to "Open this app and use the tool on the Home tab, then Copy the result."
         ).forEach { (n, line) ->
             val row = hbox(this).apply { gravity = Gravity.TOP }
             row.add(text(this, n, 13f, C.brand, true).apply { minWidth = dp(30) }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
