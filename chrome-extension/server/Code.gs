@@ -36,9 +36,44 @@ function doPost(e) {
   }
 }
 
-// A quick check that the web app is running: open the /exec URL in a browser
-function doGet() {
+// GET /exec                 -> health check (open the URL in a browser)
+// GET /exec?action=promo    -> the promo to show in the extension popup (from the "Promos" tab)
+function doGet(e) {
+  if (e && e.parameter && e.parameter.action === "promo") return json_({ ok: true, promo: activePromo_() });
   return json_({ ok: true, service: "MYchat Easy", time: new Date().toISOString() });
+}
+
+// Run this once from the Apps Script editor (select setupPromos, click Run) to create the Promos tab with an example row.
+function setupPromos() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = sheet_(ss, "Promos", ["Active", "Title", "Text", "Button text", "Link", "Image URL", "Start date", "End date"]);
+  if (sh.getLastRow() < 2) {
+    sh.appendRow(["No", "Need a website or marketing?", "Digital Aid IT builds websites and grows brands online. Get 20% off this month.",
+      "Learn more", "https://digitalaidit.com", "", "", ""]);
+  }
+}
+
+// The first row marked Active (Yes / TRUE / ✓) whose dates include today. Only https links and images are allowed.
+function activePromo_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Promos");
+  if (!sh || sh.getLastRow() < 2) return null;
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const https = v => /^https:\/\/[^\s"'<>]+$/i.test(String(v || "").trim()) ? String(v).trim() : "";
+  for (let i = 0; i < rows.length; i++) {
+    const [active, title, text, button, link, image, start, end] = rows[i];
+    if (!(active === true || /^(yes|y|true|on|1|✓)$/i.test(String(active).trim()))) continue;
+    if (start instanceof Date && start > today) continue;
+    if (end instanceof Date) { const e = new Date(end); e.setHours(23, 59, 59, 999); if (e < today) continue; }
+    if (!String(title || text).trim()) continue;
+    const p = {
+      title: String(title || "").slice(0, 80), text: String(text || "").slice(0, 220),
+      button: String(button || "Learn more").slice(0, 30), link: https(link), image: https(image)
+    };
+    p.id = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(p))).slice(0, 16);
+    return p;
+  }
+  return null;
 }
 
 function verifyGoogleToken_(idToken) {

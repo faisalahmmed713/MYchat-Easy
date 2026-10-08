@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.5.0
+- Promo card in the popup, managed from the "Promos" tab of the Google Sheet (title, text, button, link, image, start/end dates).
+  Closing it hides it until the popup is opened again. Only https links and images are used, and text is shown as plain text.
+- Feedback button in the popup header opens a separate Account & feedback page.
+- Feedback limits on the server: 1 per minute, 5 per day per user, no duplicate messages.
+
 ## 3.4.0
 - Google sign-in is required to use MYchat Easy. The popup shows a sign-in screen until the user signs in;
   on web pages the MYchat Easy button shows a Sign in card.

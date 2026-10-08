@@ -24,13 +24,34 @@ function renderHeader() {
 }
 
 // ---------- tabs ----------
-document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll(".nav button").forEach(x => x.setAttribute("aria-selected", x === b ? "true" : "false"));
-  ["ai", "lang", "feat", "tpl", "hist"].forEach(p => $("p-" + p).hidden = p !== b.dataset.p);
-  if (b.dataset.p === "hist") renderHistory();
-  if (b.dataset.p === "tpl") renderTemplates();
+function openPage(page) {
+  document.querySelectorAll(".nav button").forEach(x => x.setAttribute("aria-selected", x.dataset.p === page ? "true" : "false"));
+  ["ai", "lang", "feat", "tpl", "hist", "fb"].forEach(p => $("p-" + p).hidden = p !== page);
+  $("fbOpen").classList.toggle("on", page === "fb");
+  if (page === "hist") renderHistory();
+  if (page === "tpl") renderTemplates();
   document.querySelector("main").scrollTop = 0;
-}));
+}
+document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => openPage(b.dataset.p)));
+$("fbOpen").addEventListener("click", () => openPage($("p-fb").hidden ? "fb" : "ai"));
+
+// ---------- promo (from the Promos tab of the sheet) ----------
+function showPromo(p) {
+  const box = $("promo");
+  const https = v => typeof v === "string" && /^https:\/\/[^\s"'<>]+$/i.test(v);
+  if (!p || !(p.title || p.text) || box.dataset.closed === "1" || $("mainView").hidden) { box.hidden = true; return; }
+  $("promoTitle").textContent = p.title || "";
+  $("promoTitle").hidden = !p.title;
+  $("promoText").textContent = p.text || "";
+  $("promoText").hidden = !p.text;
+  const btn = $("promoBtn");
+  if (https(p.link)) { btn.href = p.link; btn.textContent = p.button || "Learn more"; btn.hidden = false; } else btn.hidden = true;
+  const img = $("promoImg");
+  if (https(p.image)) { img.onerror = () => { img.hidden = true; }; img.src = p.image; img.hidden = false; } else img.hidden = true;
+  box.hidden = false;
+}
+// Closing hides it until the popup is opened again
+$("promoClose").addEventListener("click", () => { $("promo").dataset.closed = "1"; $("promo").hidden = true; });
 
 // ---------- AI providers ----------
 function renderProviders() {
@@ -335,6 +356,8 @@ function showView() {
   else { av.style.backgroundImage = ""; av.textContent = (acc.name || acc.email || "?").trim().charAt(0).toUpperCase(); }
   $("accLabel").hidden = $("accCard").hidden = !WB.accountRequired();
   $("fbLabel").hidden = $("fbCard").hidden = !(WB.accountRequired() && WB.ACCOUNT.SCRIPT_URL);
+  $("fbOpen").hidden = needs || !WB.accountRequired();
+  if (needs) $("promo").hidden = true; else showPromo(s.promo);
 }
 $("signinBtn").addEventListener("click", async () => {
   const b = $("signinBtn"); b.disabled = true;
@@ -411,6 +434,8 @@ chrome.storage.local.get(null, async data => {
   renderAll();
   renderStars();
   showView();
+  showPromo(s.promo);
+  chrome.runtime.sendMessage({ type: "wb-promo" }).then(r => { if (r && r.promo !== undefined) showPromo(r.promo); }).catch(() => {});
   if (!$("key").value && !$("mainView").hidden) $("key").focus();
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

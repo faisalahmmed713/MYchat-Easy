@@ -348,6 +348,28 @@ async function dailyCheckIn() {
   } catch (_) { /* try again next time */ }
 }
 
+// The promo shown in the popup comes from the "Promos" tab of the sheet; refreshed at most every 6 hours.
+async function refreshPromo(force) {
+  if (!WB.ACCOUNT.SCRIPT_URL) return { ok: true, promo: null };
+  const { promoAt } = await chrome.storage.local.get("promoAt");
+  if (!force && promoAt && Date.now() - promoAt < 6 * 3600 * 1000) return { ok: true, cached: true };
+  try {
+    const r = await timedFetch(WB.ACCOUNT.SCRIPT_URL + "?action=promo", {}, 15000);
+    const d = await r.json();
+    if (!d.ok) throw new Error("bad response");
+    const p = d.promo;
+    const https = v => typeof v === "string" && /^https:\/\/[^\s"'<>]+$/i.test(v) ? v : "";
+    const promo = p && (p.title || p.text) ? {
+      id: String(p.id || "").slice(0, 32), title: String(p.title || "").slice(0, 80), text: String(p.text || "").slice(0, 220),
+      button: String(p.button || "Learn more").slice(0, 30), link: https(p.link), image: https(p.image)
+    } : null;
+    await chrome.storage.local.set({ promo, promoAt: Date.now() });
+    return { ok: true, promo };
+  } catch (_) {
+    return { ok: false };
+  }
+}
+
 async function requireAccount() {
   if (!WB.accountRequired()) return;
   const { signedIn } = await chrome.storage.local.get("signedIn");
@@ -475,13 +497,14 @@ async function listModels(provider) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const types = ["wb-translate", "wb-write", "wb-rewrite", "wb-reply", "wb-transcribe", "wb-test", "wb-models", "wb-ready",
-    "wb-signin", "wb-signout", "wb-feedback"];
+    "wb-signin", "wb-signout", "wb-feedback", "wb-promo"];
   if (!types.includes(msg?.type)) return;
   (async () => {
     try {
       if (msg.type === "wb-signin") { sendResponse({ ok: true, account: await signIn() }); return; }
       if (msg.type === "wb-signout") { await signOut(); sendResponse({ ok: true }); return; }
       if (msg.type === "wb-feedback") { sendResponse(await sendFeedback(msg.rating, msg.message)); return; }
+      if (msg.type === "wb-promo") { sendResponse(await refreshPromo(!!msg.force)); return; }
       if (msg.type === "wb-ready") {
         const s = await chrome.storage.local.get(null);
         sendResponse({ ok: true, ready: WB.ORDER.filter(p => WB.hasKey(s, p)) });
