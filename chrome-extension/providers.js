@@ -5,7 +5,7 @@ globalThis.WB = {
   // Fill these in after setup (see ACCOUNT-SETUP.md). They are not secrets.
   ACCOUNT: {
     CLIENT_ID: "706538068827-k4cvtbnt61vd9s85561hiiqm9maf2us8.apps.googleusercontent.com",   // Google Cloud OAuth client ID (Web application), ends with .apps.googleusercontent.com
-    SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyKcE0ULdjsGX2opGZeXynJ2ID55cruM6wusTqF1FHB7BmKNyv2h5hjshUcQ0eZ_tJWwA/exec"   // Google Apps Script web app URL, ends with /exec
+    SCRIPT_URL: "https://script.google.com/macros/s/AKfycbx3xZL313s_KLJoStG6pBVLNNMSSeUusXV1q8HCVMLjbBo4IMKx17IFe5vkRSv1NVSH/exec"   // Google Apps Script web app URL, ends with /exec
   },
   accountRequired() { return !!this.ACCOUNT.CLIENT_ID; },
   ORDER: ["gemini", "groq", "claude", "openai", "custom"],

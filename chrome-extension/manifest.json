@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MYchat Easy: Translate & Write Anywhere",
-  "version": "3.5.1",
+  "version": "3.5.2",
   "description": "Translate, rewrite and write in any text box. Voice typing, reply ideas and templates with your own Gemini, OpenAI or Claude key.",
   "permissions": [
     "storage",
