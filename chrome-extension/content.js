@@ -12,7 +12,8 @@
   let lastField = null;    // last text field the user typed in (for inserting replies)
   let target = null;       // text captured when the panel opened
   let panelOpen = false;
-  let busy = false;
+  let busy = 0;            // requests in flight
+  let cardGen = 0;         // bumps each time the card is opened, so late results from an older request are ignored
   let lastUndo = null;     // { el, text }
   let hideTimer = null;
   let lastBtnRect = null;
@@ -27,7 +28,7 @@
 
   // ---------- settings ----------
   function loadSettings() {
-    chrome.storage.local.get(null, s => {
+    chrome.storage.local.get(WB.CONTENT_SETTINGS, s => {
       settings = s;
       enabled = s.enabled !== false && !(s.disabledSites || []).includes(host);
       ui = { ...ui, ...(s.ui || {}) };
@@ -40,7 +41,7 @@
     });
   }
   loadSettings();
-  chrome.storage.onChanged.addListener(ch => { if (!ch.ui && !ch.usage && !ch.history) loadSettings(); });
+  chrome.storage.onChanged.addListener(ch => { if (Object.keys(ch).some(k => WB.CONTENT_SETTINGS.includes(k) && k !== "ui")) loadSettings(); });
   function saveUi() { chrome.storage.local.set({ ui }); }
 
   // ---------- UI (shadow DOM so site CSS can't affect it) ----------
@@ -313,9 +314,10 @@
   };
   q("[data-cycle]").onclick = cycleProvider;
 
-  function cycleProvider() {
+  async function cycleProvider() {
     const cur = WB.activeProvider(settings);
-    const ready = ORDER.filter(p => WB.hasKey(settings, p));
+    let ready = [];
+    try { ready = (await chrome.runtime.sendMessage({ type: "wb-ready" }))?.ready || []; } catch (_) {}
     if (ready.length < 2) {
       return toast(ready.length ? "No other AI has a saved key. Add one from the toolbar icon." : "No API key saved yet. Add one from the toolbar icon.", true);
     }
@@ -469,12 +471,25 @@
   async function writeResult(t, result) {
     const el = t.el;
     el.focus();
+    // Keep the spaces around a selected part (double-click often selects a trailing space)
+    if (!t.caret && t.text) {
+      const lead = (t.text.match(/^\s+/) || [""])[0];
+      const trail = (t.text.match(/\s+$/) || [""])[0];
+      if (lead || trail) result = lead + String(result).trim() + trail;
+    }
 
     // Plain <textarea> / <input>
     if (isField(el)) {
       const whole = el.value;
       let { start, end } = t;
-      if (t.whole !== whole && !t.caret) { start = 0; end = whole.length; }
+      if (t.whole !== whole && !t.caret) {
+        if (norm(t.text) === norm(t.whole)) { start = 0; end = whole.length; }       // it was the whole box: replace all
+        else {                                                                        // it was a part: find that part again
+          const i = whole.indexOf(t.text);
+          if (i < 0) return false;                                                    // gone: let the caller copy instead
+          start = i; end = i + t.text.length;
+        }
+      }
       start = Math.min(start, whole.length); end = Math.min(end, whole.length);
       if (t.caret && start > 0 && !/\s$/.test(whole.slice(0, start))) result = " " + result;
       const next = whole.slice(0, start) + result + whole.slice(end);
@@ -582,8 +597,10 @@
   }
 
   // ---------- result card ----------
+  const alive = g => g === cardGen && card.classList.contains("show");
   function openCard({ title, anchor = "field", rect, sticky = false }) {
     mount();
+    cardGen++;
     card._anchor = anchor; card._rect = rect; card._sticky = sticky;
     q(".ct").textContent = title;
     const cb = q(".cb"); cb.className = "cb"; cb.textContent = "";
@@ -591,12 +608,14 @@
     q(".cf").innerHTML = "";
     card.classList.add("show");
     placeCard();
+    return cardGen;
   }
   function placeCard() {
     if (card._anchor === "field") placeBox(card, btnRect(), "above");
     else placeBox(card, card._rect, "below");
   }
   function closeCard() {
+    cardGen++;
     card.classList.remove("show");
     if (voice.active) cancelVoice();
   }
@@ -629,7 +648,7 @@
 
   // ---------- AI calls ----------
   async function ai(message) {
-    busy = true; btn.classList.add("busy");
+    busy++; btn.classList.add("busy");
     try {
       const res = await chrome.runtime.sendMessage(message);
       if (!res?.ok) throw new Error(res?.error || "Something went wrong.");
@@ -638,7 +657,8 @@
       const m = String(e.message || e);
       throw new Error(m.includes("Extension context invalidated") ? "MYchat Easy was updated. Refresh this page." : m);
     } finally {
-      busy = false; btn.classList.remove("busy");
+      busy = Math.max(0, busy - 1);
+      if (!busy) btn.classList.remove("busy");
     }
   }
 
@@ -646,22 +666,25 @@
   function fieldTask(message, t, { title, insertLabel = "Replace", lang, emptyMsg = "Type something in the box first." }) {
     if (!t || !t.el || !t.el.isConnected) return toast("Couldn't find the text box. Click into it and try again.", true);
     if (!t.text.trim()) { t.el.focus(); return toast(emptyMsg); }
+    if (busy && !previewOn()) return toast("Still working on the last request…");
     closePanel();
     const go = async () => {
-      if (previewOn()) { openCard({ title }); cardBody("Working…", "muted"); }
+      const preview = previewOn();
+      const g = preview ? openCard({ title }) : 0;
+      if (preview) cardBody("Working…", "muted");
       try {
         const res = await ai({ ...message, text: t.text });
-        if (previewOn()) showResult(t, res, { title, insertLabel, lang, retry: go });
+        if (preview) { if (alive(g)) showResult(t, res, { title, insertLabel, lang, retry: go }); }
         else if (await applyResult(t, res.result)) toast(`Done · ${usageLine(res)}`);
       } catch (e) {
-        previewOn() ? cardError(e.message, go) : toast(e.message, true);
+        if (preview) { if (alive(g)) cardError(e.message, go); }
+        else toast(e.message, true);
       }
     };
     go();
   }
 
   function showResult(t, res, { title, insertLabel, lang, retry }) {
-    if (!card.classList.contains("show")) openCard({ title });
     cardBody(res.result);
     cardMeta(usageLine(res));
     cardActions([
@@ -699,7 +722,8 @@
     const sel = getSelection();
     const text = sel && !sel.isCollapsed ? sel.toString().trim() : "";
     if (text.length < 2) return hideSelbar();
-    if (editableRoot(document.activeElement)) return hideSelbar(); // the panel handles text boxes
+    const anchor = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+    if (anchor && anchor.isContentEditable) return hideSelbar(); // text inside an editor: the panel handles it
     const rect = sel.getRangeAt(0).getBoundingClientRect();
     if (!rect.width && !rect.height) return hideSelbar();
     selInfo = { text: text.slice(0, 5000), rect };
@@ -728,7 +752,7 @@
     // If the message is already in your language, translate it into the other language of the pair
     const fallback = my === a ? b : a;
     const go = async () => {
-      openCard({ title: "Translation", anchor: "rect", rect: info.rect, sticky: true });
+      const g = openCard({ title: "Translation", anchor: "rect", rect: info.rect, sticky: true });
       const wrap = document.createElement("div");
       const row = document.createElement("div"); row.className = "row";
       const label = document.createElement("span"); label.textContent = "Translate to";
@@ -746,6 +770,7 @@
       cardBody(wrap);
       try {
         const res = await ai({ type: "wb-translate", text: info.text, target: to, fallback: useAuto ? "" : fallback });
+        if (!alive(g)) return;
         out.className = ""; out.textContent = res.result;
         cardMeta(usageLine(res));
         cardActions([
@@ -755,6 +780,7 @@
         ]);
         placeCard();
       } catch (e) {
+        if (!alive(g)) return;
         out.className = "err"; out.textContent = e.message;
         cardActions([{ label: "Try again", main: true, onClick: go }, { label: "Close", onClick: () => closeCard() }]);
       }
@@ -766,7 +792,7 @@
     const langs = WB.languages(settings);
     const go = async (l) => {
       lang = l;
-      openCard({ title: "Reply ideas", anchor: "rect", rect: info.rect, sticky: true });
+      const g = openCard({ title: "Reply ideas", anchor: "rect", rect: info.rect, sticky: true });
       const wrap = document.createElement("div");
       const row = document.createElement("div"); row.className = "row";
       const label = document.createElement("span"); label.textContent = "Reply in";
@@ -779,6 +805,7 @@
       cardBody(wrap);
       try {
         const res = await ai({ type: "wb-reply", text: info.text, lang });
+        if (!alive(g)) return;
         list.textContent = ""; list.className = "";
         res.replies.forEach(r => {
           const box = document.createElement("div"); box.className = "reply";
@@ -795,7 +822,8 @@
         cardActions([{ label: "New ideas", onClick: () => go(lang) }, { label: "Close", onClick: () => closeCard() }]);
         placeCard();
       } catch (e) {
-        list.className = "cb err"; list.textContent = e.message;
+        if (!alive(g)) return;
+        list.className = "err"; list.textContent = e.message;
         cardActions([{ label: "Try again", main: true, onClick: () => go(lang) }, { label: "Close", onClick: () => closeCard() }]);
       }
     };
@@ -825,13 +853,22 @@
     if (/[\u0B80-\u0BFF]/.test(text)) return "ta-IN";
     return "en-US";
   }
-  function speak(text, langName) {
+  function loadVoices() {
+    const now = speechSynthesis.getVoices();
+    if (now.length) return Promise.resolve(now);
+    return new Promise(res => {
+      const done = () => res(speechSynthesis.getVoices());
+      speechSynthesis.addEventListener("voiceschanged", done, { once: true });
+      setTimeout(done, 800);
+    });
+  }
+  async function speak(text, langName) {
     if (!("speechSynthesis" in window)) return toast("Read aloud isn't supported in this browser.", true);
     if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; } // second click stops
     const code = (langName && !WB.isRomanized(langName) && WB.langCode(langName)) || guessLangCode(text);
     const u = new SpeechSynthesisUtterance(text.slice(0, 5000));
     u.lang = code;
-    const voices = speechSynthesis.getVoices();
+    const voices = await loadVoices();
     const prefix = code.split("-")[0].toLowerCase();
     const v = voices.find(x => x.lang.toLowerCase() === code.toLowerCase()) || voices.find(x => x.lang.toLowerCase().startsWith(prefix));
     if (v) u.voice = v;
@@ -944,20 +981,22 @@
         const wav = await toWavBase64(blob);
         const res = await ai({ type: "wb-transcribe", audio: wav.data, durationMs: wav.durationMs, lang: voice.spoken });
         text = res.text;
-      } catch (e) { end(); return cardError(e.message); }
+      } catch (e) { end(); if (!voice.cancelled) cardError(e.message); return; }
+      if (voice.cancelled) { end(); card.classList.remove("show"); return; }
     }
     end();
     if (!text) return cardError("Didn't catch anything. Try again.");
 
     if (ui.voiceMode === "translate") {
       const go = async () => {
-        openCard({ title: `Translation · ${ui.voiceTarget}`, sticky: true });
+        const g = openCard({ title: `Translation · ${ui.voiceTarget}`, sticky: true });
         cardBody("Translating…", "muted");
         try {
           const res = await ai({ type: "wb-translate", text, target: ui.voiceTarget });
+          if (!alive(g)) return;
           if (previewOn()) showResult(t, res, { title: `You said → ${ui.voiceTarget}`, insertLabel: "Insert", lang: ui.voiceTarget, retry: go });
-          else { card.classList.remove("show"); if (await applyResult(t, res.result)) toast(`Inserted · ${usageLine(res)}`); }
-        } catch (e) { cardError(e.message, go); }
+          else { closeCard(); if (await applyResult(t, res.result)) toast(`Inserted · ${usageLine(res)}`); }
+        } catch (e) { if (alive(g)) cardError(e.message, go); }
       };
       go();
     } else {

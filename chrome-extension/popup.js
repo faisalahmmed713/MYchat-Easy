@@ -184,7 +184,12 @@ function renderLangs() {
     const c = el("button", "chip");
     c.title = langs.length > 1 ? `Remove ${name}` : "At least one language is needed";
     c.append(el("span", "n", i < 9 ? String(i + 1) : ""), name, el("span", "x", "✕"));
-    c.onclick = () => { if (langs.length > 1) { save({ languages: langs.filter(l => l !== name) }); renderLangs(); } };
+    c.onclick = () => {
+      if (langs.length <= 1) return;
+      save({ languages: langs.filter(l => l !== name) });
+      save({ autoPair: WB.autoPair(s), myLang: WB.myLanguage(s) });
+      renderLangs();
+    };
     box.appendChild(c);
   });
   const dl = $("langSuggest"); dl.innerHTML = "";
@@ -207,7 +212,18 @@ function addLang() {
 }
 $("langAdd").addEventListener("click", addLang);
 $("langInput").addEventListener("keydown", e => { if (e.key === "Enter") addLang(); });
-["pairA", "pairB"].forEach(id => $(id).addEventListener("change", () => save({ autoPair: [$("pairA").value, $("pairB").value] })));
+["pairA", "pairB"].forEach(id => $(id).addEventListener("change", () => {
+  let a = $("pairA").value, b = $("pairB").value;
+  if (a === b) {
+    // Auto translate needs two different languages: move the other side to the next language
+    const langs = WB.languages(s);
+    const other = langs.find(l => l !== a);
+    if (!other) return;
+    if (id === "pairA") b = other; else a = other;
+  }
+  save({ autoPair: [a, b] });
+  renderLangs();
+}));
 $("myLang").addEventListener("change", () => save({ myLang: $("myLang").value }));
 
 function segmented(container, options, value, onPick) {

@@ -79,7 +79,9 @@ globalThis.WB = {
     const l = this.languages(s);
     return s.myLang && l.includes(s.myLang) ? s.myLang : l[0];
   },
-  currentModel(s, p) { return ((s.models || {})[p] || "").trim() || this.PROVIDERS[p].model; },
+  currentModel(s, p) { return ((s.models || {})[p] || "").trim() || (this.PROVIDERS[p] || {}).model || ""; },
+  CONTENT_SETTINGS: ["enabled", "disabledSites", "ui", "languages", "langs", "autoPair", "myLang", "provider", "models",
+    "voiceEngine", "preview", "selbar", "micButton", "templates", "tone"],
   flag(s, key) { return s[key] !== false; }, // feature toggles default to on
 
   hasKey(s, p) {
@@ -88,14 +90,25 @@ globalThis.WB = {
     if (p === "custom") return !!(s.customBase && (s.models || {}).custom);
     return true;
   },
-  activeProvider(s) { return s.provider || ((s.keys || {}).claude ? "claude" : "gemini"); },
+  // Always returns a valid provider id, even if storage holds an old or unknown value
+  activeProvider(s) {
+    if (s.provider && this.PROVIDERS[s.provider]) return s.provider;
+    return (s.keys || {}).claude ? "claude" : "gemini";
+  },
   // Older versions stored only extra languages in `langs`; merge them in.
   languages(s) {
     if (Array.isArray(s.languages) && s.languages.length) return s.languages;
     const extra = Array.isArray(s.langs) ? s.langs : [];
     return [...this.DEFAULT_LANGS, ...extra.filter(x => !this.DEFAULT_LANGS.includes(x))];
   },
-  autoPair(s) { return Array.isArray(s.autoPair) && s.autoPair.length === 2 ? s.autoPair : this.DEFAULT_PAIR; },
+  // The two Auto-translate languages, always taken from the current language list and never the same twice
+  autoPair(s) {
+    const langs = this.languages(s);
+    let [a, b] = Array.isArray(s.autoPair) && s.autoPair.length === 2 ? s.autoPair : this.DEFAULT_PAIR;
+    if (!langs.includes(a)) a = langs[0];
+    if (!langs.includes(b) || b === a) b = langs.find(l => l !== a) || a;
+    return [a, b];
+  },
   // Older versions used ids like "en", "bn", "banglish", "lang:Hindi"
   normalizeLang(id) {
     const map = { en: "English", bn: "Bangla", banglish: "Banglish" };
@@ -104,8 +117,9 @@ globalThis.WB = {
   },
   formatCost(usd, s) {
     if (usd == null) return null;
-    const code = (s.currency || "USD").toUpperCase();
-    const rate = code === "USD" ? 1 : Number(s.currencyRate) || 1;
+    let code = (s.currency || "USD").toUpperCase();
+    let rate = code === "USD" ? 1 : Number(s.currencyRate);
+    if (!(rate > 0)) { code = "USD"; rate = 1; } // no valid rate yet: show dollars rather than a wrong local amount
     const v = usd * rate;
     const opts = v > 0 && v < 0.01
       ? { maximumSignificantDigits: 2 }
