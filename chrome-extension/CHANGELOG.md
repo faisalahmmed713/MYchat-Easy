@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.6.0
+- Promo clicks are recorded per signed-in user. Each promo (by title) gets its own sheet tab, "Promo – <title>",
+  with one row per user (clicks, first and last click). New promos get new tabs; older promos' tabs are never changed.
+- "Promo stats" tab: total clicks and unique users per promo. Each user's row in "Users" shows their total promo clicks.
+- Privacy policy updated for click recording.
+
 ## 3.5.0
 - Promo card in the popup, managed from the "Promos" tab of the Google Sheet (title, text, button, link, image, start/end dates).
   Closing it hides it until the popup is opened again. Only https links and images are used, and text is shown as plain text.

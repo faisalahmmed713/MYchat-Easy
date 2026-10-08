@@ -48,8 +48,14 @@ function showPromo(p) {
   if (https(p.link)) { btn.href = p.link; btn.textContent = p.button || "Learn more"; btn.hidden = false; } else btn.hidden = true;
   const img = $("promoImg");
   if (https(p.image)) { img.onerror = () => { img.hidden = true; }; img.src = p.image; img.hidden = false; } else img.hidden = true;
+  shownPromo = p;
   box.hidden = false;
 }
+// Count the click (in the background) and let the link open normally
+let shownPromo = null;
+$("promoBtn").addEventListener("click", () => {
+  if (shownPromo && shownPromo.id) chrome.runtime.sendMessage({ type: "wb-promo-click", id: shownPromo.id, title: shownPromo.title }).catch(() => {});
+});
 // Closing hides it until the popup is opened again
 $("promoClose").addEventListener("click", () => { $("promo").dataset.closed = "1"; $("promo").hidden = true; });
 

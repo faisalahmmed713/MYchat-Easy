@@ -19,6 +19,8 @@ function doPost(e) {
     try {
       if (body.action === "register" || body.action === "ping") {
         upsertUser_(ss, user, body);
+      } else if (body.action === "promo-click") {
+        recordPromoClick_(ss, user, body);
       } else if (body.action === "feedback") {
         const limit = feedbackLimit_(user.email, body);
         if (limit) return json_({ ok: false, error: limit });
@@ -152,6 +154,76 @@ function pruneOldFeedbackDays_(props, today) {
   const keys = props.getKeys();
   for (let i = 0; i < keys.length; i++) {
     if (keys[i].indexOf("fb:") === 0 && keys[i].indexOf("fb:" + today + ":") !== 0) props.deleteProperty(keys[i]);
+  }
+}
+
+// Promo clicks. Each promo (by its Title) gets its own tab, "Promo – <title>", with one row per user:
+// Email, Name, Clicks, First click, Last click. Adding a new promo creates a new tab; older promos' tabs are never changed.
+// "Promo stats" has one row per promo (total clicks, unique users), and each user's row in "Users" keeps their total.
+// Repeat clicks by the same user on the same promo within 10 seconds count once.
+function recordPromoClick_(ss, user, body) {
+  const title = String(body.title || "").trim().slice(0, 80) || "Untitled promo";
+  const cache = CacheService.getScriptCache();
+  const recentKey = "pc:" + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, title)) + ":" + user.email;
+  if (cache.get(recentKey)) return;
+  cache.put(recentKey, "1", 10);
+  const now = new Date();
+
+  // 1) this promo's own tab
+  const tabName = promoTabName_(title);
+  const tab = sheet_(ss, tabName, ["Email", "Name", "Clicks", "First click", "Last click"]);
+  const tLast = tab.getLastRow();
+  const tEmails = tLast > 1 ? tab.getRange(2, 1, tLast - 1, 1).getValues().map(r => String(r[0]).toLowerCase()) : [];
+  const t = tEmails.indexOf(user.email);
+  const firstTime = t < 0;
+  if (firstTime) tab.appendRow([user.email, safe_(user.name, 200), 1, now, now]);
+  else {
+    const row = t + 2;
+    const n = Number(tab.getRange(row, 3).getValues()[0][0] || 0);
+    tab.getRange(row, 3).setValue(n + 1);
+    tab.getRange(row, 5).setValue(now);
+  }
+
+  // 2) one summary row per promo
+  const stats = sheet_(ss, "Promo stats", ["Promo", "Tab", "Clicks", "Unique users", "First click", "Last click"]);
+  const sLast = stats.getLastRow();
+  const titles = sLast > 1 ? stats.getRange(2, 1, sLast - 1, 1).getValues().map(r => String(r[0]).replace(/^'/, "")) : [];
+  const i = titles.indexOf(title);
+  if (i >= 0) {
+    const row = i + 2;
+    const cur = stats.getRange(row, 3, 1, 2).getValues()[0];
+    stats.getRange(row, 3, 1, 2).setValues([[Number(cur[0] || 0) + 1, Number(cur[1] || 0) + (firstTime ? 1 : 0)]]);
+    stats.getRange(row, 6).setValue(now);
+  } else {
+    stats.appendRow([safe_(title, 80), tabName, 1, 1, now, now]);
+  }
+
+  // 3) the user's own row in "Users"
+  const users = sheet_(ss, "Users", ["Email", "Name", "First seen", "Last seen", "Version", "Browser"]);
+  ensureUserClickColumns_(users);
+  const uLast = users.getLastRow();
+  const emails = uLast > 1 ? users.getRange(2, 1, uLast - 1, 1).getValues().map(r => String(r[0]).toLowerCase()) : [];
+  let u = emails.indexOf(user.email);
+  if (u < 0) {
+    users.appendRow([user.email, safe_(user.name, 200), now, now, safe_(body.version, 20), ""]);
+    u = users.getLastRow() - 2;
+  }
+  const uRow = u + 2;
+  const before = Number(users.getRange(uRow, 7).getValues()[0][0] || 0);
+  users.getRange(uRow, 7, 1, 3).setValues([[before + 1, safe_(title, 80), now]]);
+}
+
+// Tab names can't contain : \ / ? * [ ] and are limited in length
+function promoTabName_(title) {
+  return ("Promo – " + title.replace(/[:\\/?*\[\]]/g, " ").replace(/\s+/g, " ").trim()).slice(0, 90);
+}
+
+// Adds the click columns to an existing Users tab (G, H, I) if they aren't there yet
+function ensureUserClickColumns_(users) {
+  const head = users.getRange(1, 7, 1, 3).getValues()[0];
+  if (head[0] !== "Promo clicks") {
+    users.getRange(1, 7, 1, 3).setValues([["Promo clicks", "Last promo clicked", "Last click time"]]);
+    users.getRange(1, 7, 1, 3).setFontWeight("bold");
   }
 }
 

@@ -375,6 +375,18 @@ async function refreshPromo(force) {
   }
 }
 
+// Records a click on the popup promo. Silent: never asks the user to sign in again, and never blocks the link.
+async function promoClick(id, title) {
+  if (!WB.accountRequired() || !WB.ACCOUNT.SCRIPT_URL || !id) return { ok: true, skipped: true };
+  try {
+    const { idToken } = await googleIdToken(false);
+    await postToSheet("promo-click", idToken, { promoId: String(id).slice(0, 40), title: String(title || "").slice(0, 120) });
+    return { ok: true };
+  } catch (_) {
+    return { ok: false };
+  }
+}
+
 async function requireAccount() {
   if (!WB.accountRequired()) return;
   const { signedIn } = await chrome.storage.local.get("signedIn");
@@ -502,7 +514,7 @@ async function listModels(provider) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const types = ["wb-translate", "wb-write", "wb-rewrite", "wb-reply", "wb-transcribe", "wb-test", "wb-models", "wb-ready",
-    "wb-signin", "wb-signout", "wb-feedback", "wb-promo"];
+    "wb-signin", "wb-signout", "wb-feedback", "wb-promo", "wb-promo-click"];
   if (!types.includes(msg?.type)) return;
   (async () => {
     try {
@@ -510,6 +522,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg.type === "wb-signout") { await signOut(); sendResponse({ ok: true }); return; }
       if (msg.type === "wb-feedback") { sendResponse(await sendFeedback(msg.rating, msg.message)); return; }
       if (msg.type === "wb-promo") { sendResponse(await refreshPromo(!!msg.force)); return; }
+      if (msg.type === "wb-promo-click") { sendResponse(await promoClick(msg.id, msg.title)); return; }
       if (msg.type === "wb-ready") {
         const s = await chrome.storage.local.get(null);
         sendResponse({ ok: true, ready: WB.ORDER.filter(p => WB.hasKey(s, p)) });
