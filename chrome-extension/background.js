@@ -348,15 +348,19 @@ async function dailyCheckIn() {
   } catch (_) { /* try again next time */ }
 }
 
-// The promo shown in the popup comes from the "Promos" tab of the sheet; refreshed at most every 6 hours.
+// The promo shown in the popup comes from the "Promos" tab of the sheet.
+// Checked again after 1 hour when a promo is showing, or after 10 minutes when there is none,
+// so a new promo appears soon after it is added to the sheet.
 async function refreshPromo(force) {
   if (!WB.ACCOUNT.SCRIPT_URL) return { ok: true, promo: null };
-  const { promoAt } = await chrome.storage.local.get("promoAt");
-  if (!force && promoAt && Date.now() - promoAt < 6 * 3600 * 1000) return { ok: true, cached: true };
+  const { promoAt, promo: cached } = await chrome.storage.local.get(["promoAt", "promo"]);
+  const maxAge = cached ? 3600 * 1000 : 10 * 60 * 1000;
+  if (!force && promoAt && Date.now() - promoAt < maxAge) return { ok: true, cached: true };
   try {
-    const r = await timedFetch(WB.ACCOUNT.SCRIPT_URL + "?action=promo", {}, 15000);
+    const r = await timedFetch(WB.ACCOUNT.SCRIPT_URL + "?action=promo&t=" + Date.now(), {}, 15000);
     const d = await r.json();
     if (!d.ok) throw new Error("bad response");
+    if (!("promo" in d)) return { ok: false, oldServer: true }; // the Apps Script hasn't been updated yet: don't remember "no promo"
     const p = d.promo;
     const https = v => typeof v === "string" && /^https:\/\/[^\s"'<>]+$/i.test(v) ? v : "";
     const promo = p && (p.title || p.text) ? {
