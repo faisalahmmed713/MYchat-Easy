@@ -299,6 +299,7 @@ async function postToSheet(action, idToken, extra = {}) {
   if (!WB.ACCOUNT.SCRIPT_URL) return { ok: true, skipped: true };
   const r = await timedFetch(WB.ACCOUNT.SCRIPT_URL, {
     method: "POST",
+    credentials: "omit", // never send Google cookies: avoids the multi-account "/u/N/" redirect problem
     headers: { "content-type": "text/plain;charset=utf-8" }, // simple request: no CORS preflight
     body: JSON.stringify({ action, idToken, version: chrome.runtime.getManifest().version, browser: navigator.userAgent.slice(0, 200), ...extra })
   }, 30000);
@@ -357,7 +358,7 @@ async function refreshPromo(force) {
   const maxAge = cached ? 3600 * 1000 : 10 * 60 * 1000;
   if (!force && promoAt && Date.now() - promoAt < maxAge) return { ok: true, cached: true };
   try {
-    const r = await timedFetch(WB.ACCOUNT.SCRIPT_URL + "?action=promo&t=" + Date.now(), {}, 15000);
+    const r = await timedFetch(WB.ACCOUNT.SCRIPT_URL + "?action=promo&t=" + Date.now(), { credentials: "omit" }, 15000);
     const d = await r.json();
     if (!d.ok) throw new Error("bad response");
     if (!("promo" in d)) return { ok: false, oldServer: true }; // the Apps Script hasn't been updated yet: don't remember "no promo"
