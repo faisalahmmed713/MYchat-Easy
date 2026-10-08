@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.0
+- Google sign-in is required to use MYchat Easy. The popup shows a sign-in screen until the user signs in;
+  on web pages the MYchat Easy button shows a Sign in card.
+- Users (email, name, first/last use, version) and feedback are recorded in the developer's Google Sheet
+  through an Apps Script web app that verifies every Google sign-in token (see ACCOUNT-SETUP.md and server/Code.gs).
+- New Account card with sign out, and a Send feedback form with a star rating, in the Features tab.
+- Privacy policy updated for the email collection.
+
 ## 3.3.0 (full audit)
 **Security**
 - Web pages no longer have access to your API keys. The page script reads only non-secret settings; keys stay in the background and settings popup.

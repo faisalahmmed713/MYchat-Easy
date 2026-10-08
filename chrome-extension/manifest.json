@@ -1,18 +1,21 @@
 {
   "manifest_version": 3,
   "name": "MYchat Easy: Translate & Write Anywhere",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Translate, rewrite and write in any text box. Voice typing, reply ideas and templates with your own Gemini, OpenAI or Claude key.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "identity"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
     "https://api.groq.com/*",
     "https://api.anthropic.com/*",
     "https://api.openai.com/*",
-    "https://openrouter.ai/*"
+    "https://openrouter.ai/*",
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
   ],
   "background": {
     "service_worker": "background.js"

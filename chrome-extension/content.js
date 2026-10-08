@@ -422,7 +422,7 @@
     hideSelbar();
   }, true);
 
-  btn.addEventListener("click", () => { if (!busy) panelOpen ? closePanel() : openPanel(); });
+  btn.addEventListener("click", () => { if (busy) return; if (panelOpen) return closePanel(); if (requireSignin()) openPanel(); });
   mic.addEventListener("click", () => voice.active ? stopVoice() : startVoice());
 
   // ---------- reading & writing text ----------
@@ -637,6 +637,7 @@
     placeCard();
   }
   function cardError(msg, retry) {
+    if (!signedIn()) { showSignin(card._anchor === "rect" ? card._rect : null); return; }
     cardBody(msg, "err"); cardMeta("");
     cardActions([retry && { label: "Try again", main: true, onClick: retry }, { label: "Close", onClick: () => closeCard() }]);
   }
@@ -646,11 +647,43 @@
     return `${res.providerLabel || ""} · ${tokens.toLocaleString()} tokens${u.cost ? " · " + u.cost : ""}`;
   }
 
+  // ---------- sign-in gate ----------
+  const signedIn = () => !WB.accountRequired() || settings.signedIn === true;
+  function showSignin(anchor) {
+    const g = openCard(anchor ? { title: "Sign in required", anchor: "rect", rect: anchor, sticky: true } : { title: "Sign in required", sticky: true });
+    cardBody("Sign in with your Google account to use MYchat Easy. It takes a few seconds and you only do it once.");
+    cardActions([
+      { label: "Sign in with Google", main: true, onClick: async () => {
+        cardBody("Opening Google sign-in…", "muted"); cardActions([]);
+        try {
+          const r = await chrome.runtime.sendMessage({ type: "wb-signin" });
+          if (!alive(g)) return;
+          if (!r?.ok) throw new Error(r?.error || "Sign-in failed");
+          settings.signedIn = true;
+          closeCard();
+          toast(`Signed in as ${r.account.email}. You're ready to go.`);
+        } catch (e) {
+          if (!alive(g)) return;
+          cardBody(String(e.message || e), "err");
+          cardActions([{ label: "Try again", main: true, onClick: () => showSignin(anchor) }, { label: "Close", onClick: () => closeCard() }]);
+        }
+      } },
+      { label: "Not now", onClick: () => closeCard() }
+    ]);
+  }
+  function requireSignin(anchor) {
+    if (signedIn()) return true;
+    closePanel();
+    showSignin(anchor);
+    return false;
+  }
+
   // ---------- AI calls ----------
   async function ai(message) {
     busy++; btn.classList.add("busy");
     try {
       const res = await chrome.runtime.sendMessage(message);
+      if (res?.code === "signin") { settings.signedIn = false; const err = new Error(res.error); err.code = "signin"; throw err; }
       if (!res?.ok) throw new Error(res?.error || "Something went wrong.");
       return res;
     } catch (e) {
@@ -677,6 +710,7 @@
         if (preview) { if (alive(g)) showResult(t, res, { title, insertLabel, lang, retry: go }); }
         else if (await applyResult(t, res.result)) toast(`Done · ${usageLine(res)}`);
       } catch (e) {
+        if (e.code === "signin") { showSignin(); return; }
         if (preview) { if (alive(g)) cardError(e.message, go); }
         else toast(e.message, true);
       }
@@ -736,6 +770,7 @@
     const b = e.target.closest("button");
     if (!b || !selInfo) return;
     hideSelbar();
+    if (!requireSignin(selInfo.rect)) return;
     if (b.dataset.s === "tr") translateSelection(selInfo);
     if (b.dataset.s === "reply") replyIdeas(selInfo, "same");
     if (b.dataset.s === "listen") speak(selInfo.text);
@@ -781,6 +816,7 @@
         placeCard();
       } catch (e) {
         if (!alive(g)) return;
+        if (e.code === "signin") return showSignin(info.rect);
         out.className = "err"; out.textContent = e.message;
         cardActions([{ label: "Try again", main: true, onClick: go }, { label: "Close", onClick: () => closeCard() }]);
       }
@@ -823,6 +859,7 @@
         placeCard();
       } catch (e) {
         if (!alive(g)) return;
+        if (e.code === "signin") return showSignin(info.rect);
         list.className = "err"; list.textContent = e.message;
         cardActions([{ label: "Try again", main: true, onClick: () => go(lang) }, { label: "Close", onClick: () => closeCard() }]);
       }
@@ -892,6 +929,7 @@
 
   function startVoice() {
     if (voice.active) return;
+    if (!requireSignin()) return;
     const el = current || lastField;
     if (!el || !el.isConnected) return toast("Click into a text box first, then start speaking.", true);
     const engine = settings.voiceEngine || "browser";
@@ -1031,7 +1069,7 @@
 
   // ---------- templates: type /shortcut + space ----------
   document.addEventListener("input", e => {
-    if (!enabled || e.inputType !== "insertText" || (e.data !== " " && e.data !== "\u00a0")) return;
+    if (!enabled || !signedIn() || e.inputType !== "insertText" || (e.data !== " " && e.data !== "\u00a0")) return;
     const templates = settings.templates || [];
     if (!templates.length) return;
     const el = editableRoot(e.composedPath()[0]);

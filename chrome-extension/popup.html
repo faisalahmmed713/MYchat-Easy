@@ -18,6 +18,21 @@
   body{width:370px;height:590px;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);
     font-family:Inter,"Segoe UI",system-ui,-apple-system,"Noto Sans",sans-serif;font-size:13.5px;line-height:1.45}
   button{font-family:inherit}
+  .signin{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px 26px;gap:10px}
+  .signin-logo{width:72px;height:72px}
+  .signin-title{font-size:19px;margin:6px 0 0;letter-spacing:-.01em}
+  .signin-text{margin:0;color:var(--muted);font-size:13.5px}
+  .signin-note{margin-top:10px}
+  .gbtn{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:10px;margin-top:12px;width:100%;max-width:280px;
+    padding:11px 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-weight:600;font-size:14px}
+  .gbtn:hover{background:var(--hover)}
+  .gbtn:focus-visible{outline:2px solid var(--focus)}
+  .gbtn[disabled]{opacity:.6;cursor:wait}
+  .avatar{width:38px;height:38px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-weight:700;background-size:cover;background-position:center;flex:none}
+  .stars{display:flex;gap:4px}
+  .stars button{all:unset;cursor:pointer;font-size:24px;line-height:1;color:var(--line)}
+  .stars button[aria-checked="true"]{color:#F5B301}
+  .stars button:focus-visible{outline:2px solid var(--focus);border-radius:4px}
   [hidden]{display:none!important}
   svg{flex:none}
   .ico{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -168,7 +183,20 @@
     <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>History</button>
 </nav>
 
-<main>
+<!-- Shown until the user signs in -->
+<section id="signinView" class="signin" hidden>
+  <img src="icons/icon128.png" alt="" class="signin-logo">
+  <h2 class="signin-title">Welcome to MYchat Easy</h2>
+  <p class="signin-text">Translate, rewrite and write in any text box with AI. Sign in with your Google account to start.</p>
+  <button class="gbtn" id="signinBtn">
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 7l7.4 5.7c4.3-4 6.9-9.9 6.9-17.2z"/><path fill="#FBBC05" d="M10.5 28.6A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.1.8-4.6l-7.9-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.2-13.5-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+    Sign in with Google
+  </button>
+  <p class="status" id="signinStatus" role="status"></p>
+  <p class="note signin-note">We use your Google email to give you access and to read your feedback. We never see your password. Your text and API keys stay on your device and go only to the AI you choose. <a href="https://digitalaidit.com/mychat-easy-privacy" target="_blank" rel="noopener">Privacy policy</a></p>
+</section>
+
+<main id="mainView">
   <!-- AI -->
   <section id="p-ai">
     <div class="label">Choose your AI</div>
@@ -242,6 +270,21 @@
 
   <!-- Features -->
   <section id="p-feat" hidden>
+    <div class="label" id="accLabel">Account</div>
+    <div class="card" id="accCard">
+      <div class="row">
+        <div class="avatar" id="avatar" aria-hidden="true"></div>
+        <div style="flex:1;min-width:0"><b id="accName" style="display:block"></b><span class="note" id="accEmail"></span></div>
+        <button class="link danger" id="signoutBtn">Sign out</button>
+      </div>
+    </div>
+    <div class="label" id="fbLabel">Send feedback</div>
+    <div class="card" id="fbCard">
+      <div class="stars" id="stars" role="radiogroup" aria-label="Rating"></div>
+      <textarea id="fbText" rows="3" maxlength="5000" placeholder="What do you like? What should we improve?"></textarea>
+      <div class="row"><button class="btn primary" id="fbSend">Send feedback</button><span class="status" id="fbStatus" role="status"></span></div>
+      <p class="note">Sent with your Google email so Digital Aid IT can reply.</p>
+    </div>
     <div class="label">Features</div>
     <div class="card tlist">
       <div class="trow"><div><b>Preview before inserting</b><span>See the result first, then Replace, Copy or Try again</span></div>

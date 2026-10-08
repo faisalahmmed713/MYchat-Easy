@@ -255,9 +255,109 @@ async function recordUsageNow(provider, model, inTok, outTok, usdOverride) {
   return c;
 }
 
+// ---------- Google sign-in and the users / feedback sheet ----------
+class SigninRequired extends Error { constructor() { super("Sign in with Google to use MYchat Easy."); this.code = "signin"; } }
+
+function decodeJwt(token) {
+  const part = String(token).split(".")[1] || "";
+  const b64 = part.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((part.length + 3) % 4);
+  const bin = atob(b64);
+  const bytes = Uint8Array.from(bin, ch => ch.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// Asks Google for an ID token. interactive=false tries silently with the existing Google session.
+async function googleIdToken(interactive) {
+  const nonce = crypto.randomUUID();
+  const params = new URLSearchParams({
+    client_id: WB.ACCOUNT.CLIENT_ID,
+    response_type: "id_token",
+    redirect_uri: chrome.identity.getRedirectURL(),
+    scope: "openid email profile",
+    nonce,
+    prompt: interactive ? "select_account" : "none"
+  });
+  const { account } = await chrome.storage.local.get("account");
+  if (!interactive && account?.email) params.set("login_hint", account.email);
+  let redirect;
+  try {
+    redirect = await chrome.identity.launchWebAuthFlow({ url: "https://accounts.google.com/o/oauth2/v2/auth?" + params, interactive });
+  } catch (e) {
+    throw new Error(interactive ? "Sign-in was cancelled or blocked. Try again." : "silent-signin-failed");
+  }
+  const frag = new URLSearchParams(String(redirect).split("#")[1] || "");
+  if (frag.get("error")) throw new Error(interactive ? "Google sign-in failed: " + frag.get("error") : "silent-signin-failed");
+  const idToken = frag.get("id_token");
+  if (!idToken) throw new Error("Google didn't return a sign-in token. Try again.");
+  const info = decodeJwt(idToken);
+  if (info.nonce !== nonce || info.aud !== WB.ACCOUNT.CLIENT_ID) throw new Error("Sign-in check failed. Try again.");
+  if (!info.email || info.email_verified === false) throw new Error("This Google account has no verified email.");
+  return { idToken, info };
+}
+
+async function postToSheet(action, idToken, extra = {}) {
+  if (!WB.ACCOUNT.SCRIPT_URL) return { ok: true, skipped: true };
+  const r = await timedFetch(WB.ACCOUNT.SCRIPT_URL, {
+    method: "POST",
+    headers: { "content-type": "text/plain;charset=utf-8" }, // simple request: no CORS preflight
+    body: JSON.stringify({ action, idToken, version: chrome.runtime.getManifest().version, browser: navigator.userAgent.slice(0, 200), ...extra })
+  }, 30000);
+  let d = {};
+  try { d = await r.json(); } catch (_) {}
+  if (!r.ok || !d.ok) throw new Error(d.error || "Couldn't reach the MYchat Easy server. Try again later.");
+  return d;
+}
+
+async function signIn() {
+  const { idToken, info } = await googleIdToken(true);
+  const account = { email: info.email, name: info.name || "", picture: info.picture || "", at: Date.now() };
+  await chrome.storage.local.set({ account, signedIn: true });
+  try { await postToSheet("register", idToken); await chrome.storage.local.set({ registered: true, lastPing: new Date().toDateString() }); }
+  catch (_) { await chrome.storage.local.set({ registered: false }); } // retried on the next daily check-in
+  return account;
+}
+
+async function signOut() {
+  await chrome.storage.local.remove(["account", "registered", "lastPing"]);
+  await chrome.storage.local.set({ signedIn: false });
+}
+
+async function freshToken() {
+  try { return (await googleIdToken(false)).idToken; }
+  catch (_) { return (await googleIdToken(true)).idToken; }
+}
+
+async function sendFeedback(rating, message) {
+  const text = String(message || "").trim();
+  if (!text && !rating) throw new Error("Add a rating or a message first.");
+  const idToken = await freshToken();
+  await postToSheet("feedback", idToken, { rating: Math.max(0, Math.min(5, Number(rating) || 0)), message: text.slice(0, 5000) });
+  return { ok: true };
+}
+
+// Once a day, update "last seen" and version in the sheet. Silent: never interrupts the user.
+async function dailyCheckIn() {
+  if (!WB.accountRequired() || !WB.ACCOUNT.SCRIPT_URL) return;
+  const { signedIn, lastPing, registered } = await chrome.storage.local.get(["signedIn", "lastPing", "registered"]);
+  const today = new Date().toDateString();
+  if (!signedIn || (lastPing === today && registered)) return;
+  try {
+    const { idToken } = await googleIdToken(false);
+    await postToSheet(registered ? "ping" : "register", idToken);
+    await chrome.storage.local.set({ lastPing: today, registered: true });
+  } catch (_) { /* try again next time */ }
+}
+
+async function requireAccount() {
+  if (!WB.accountRequired()) return;
+  const { signedIn } = await chrome.storage.local.get("signedIn");
+  if (!signedIn) throw new SigninRequired();
+}
+
 const KIND_LABELS = { email: "Email", blog: "Blog post", social: "Social post", description: "Description", hashtags: "Hashtags", faq: "FAQ" };
 
 async function runTask(task, forceProvider) {
+  await requireAccount();
   const s = await chrome.storage.local.get(null);
   const provider = forceProvider || WB.activeProvider(s);
   if (!WB.hasKey(s, provider)) {
@@ -286,6 +386,7 @@ async function runTask(task, forceProvider) {
     out.result = out.replies.join("\n\n");
   }
   if (!task.noHistory) await pushHistory({ label, input: task.text, output: out.result });
+  dailyCheckIn();
   return out;
 }
 
@@ -298,6 +399,7 @@ function b64ToBytes(b64) {
 }
 
 async function transcribe(msg) {
+  await requireAccount();
   const s = await chrome.storage.local.get(null);
   const capable = ["groq", "openai", "gemini"].filter(p => WB.hasKey(s, p));
   if (!capable.length) throw new Error("AI voice needs a Groq, OpenAI or Gemini key (Groq is free). Or switch the voice engine to Browser.");
@@ -334,6 +436,7 @@ async function transcribe(msg) {
 
 // ---------- live model lists ----------
 async function listModels(provider) {
+  await requireAccount();
   if (!PROVIDERS[provider]) throw new Error("Unknown AI provider.");
   const s = await chrome.storage.local.get(null);
   const key = (s.keys || {})[provider];
@@ -371,10 +474,14 @@ async function listModels(provider) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  const types = ["wb-translate", "wb-write", "wb-rewrite", "wb-reply", "wb-transcribe", "wb-test", "wb-models", "wb-ready"];
+  const types = ["wb-translate", "wb-write", "wb-rewrite", "wb-reply", "wb-transcribe", "wb-test", "wb-models", "wb-ready",
+    "wb-signin", "wb-signout", "wb-feedback"];
   if (!types.includes(msg?.type)) return;
   (async () => {
     try {
+      if (msg.type === "wb-signin") { sendResponse({ ok: true, account: await signIn() }); return; }
+      if (msg.type === "wb-signout") { await signOut(); sendResponse({ ok: true }); return; }
+      if (msg.type === "wb-feedback") { sendResponse(await sendFeedback(msg.rating, msg.message)); return; }
       if (msg.type === "wb-ready") {
         const s = await chrome.storage.local.get(null);
         sendResponse({ ok: true, ready: WB.ORDER.filter(p => WB.hasKey(s, p)) });
@@ -392,7 +499,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           ? "Couldn't reach the custom API. Open MYchat Easy settings and click Test connection to allow access, then check the base URL."
           : "Network error. Check your internet connection.";
       }
-      sendResponse({ ok: false, error: err });
+      sendResponse({ ok: false, error: err, code: e && e.code });
     }
   })();
   return true;

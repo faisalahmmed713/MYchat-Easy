@@ -1,6 +1,13 @@
 // Shared config for background.js, content.js and popup.js
 globalThis.WB = {
   NAME: "MYchat Easy",
+  // Google sign-in and the Google Sheet that records users and feedback.
+  // Fill these in after setup (see ACCOUNT-SETUP.md). They are not secrets.
+  ACCOUNT: {
+    CLIENT_ID: "",   // Google Cloud OAuth client ID (Web application), ends with .apps.googleusercontent.com
+    SCRIPT_URL: ""   // Google Apps Script web app URL, ends with /exec
+  },
+  accountRequired() { return !!this.ACCOUNT.CLIENT_ID; },
   ORDER: ["gemini", "groq", "claude", "openai", "custom"],
   PROVIDERS: {
     gemini: { label: "Gemini (Free)", model: "gemini-3.8-flash", models: ["gemini-3.8-flash"], free: true, keyUrl: "https://aistudio.google.com/apikey",
@@ -80,7 +87,7 @@ globalThis.WB = {
     return s.myLang && l.includes(s.myLang) ? s.myLang : l[0];
   },
   currentModel(s, p) { return ((s.models || {})[p] || "").trim() || (this.PROVIDERS[p] || {}).model || ""; },
-  CONTENT_SETTINGS: ["enabled", "disabledSites", "ui", "languages", "langs", "autoPair", "myLang", "provider", "models",
+  CONTENT_SETTINGS: ["signedIn", "enabled", "disabledSites", "ui", "languages", "langs", "autoPair", "myLang", "provider", "models",
     "voiceEngine", "preview", "selbar", "micButton", "templates", "tone"],
   flag(s, key) { return s[key] !== false; }, // feature toggles default to on
 

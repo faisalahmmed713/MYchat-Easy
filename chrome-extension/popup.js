@@ -317,6 +317,68 @@ function renderHistory() {
 }
 $("histClear").addEventListener("click", () => { save({ history: [] }); renderHistory(); });
 
+// ---------- account (Google sign-in) & feedback ----------
+let rating = 0;
+function showView() {
+  const needs = WB.accountRequired() && !s.signedIn;
+  $("signinView").hidden = !needs;
+  $("mainView").hidden = needs;
+  document.querySelector(".nav").hidden = needs;
+  document.querySelector(".site").hidden = needs;
+  document.querySelector(".top label.switch").hidden = needs;
+  const acc = s.account || {};
+  $("accName").textContent = acc.name || "Signed in";
+  $("accEmail").textContent = acc.email || "";
+  const av = $("avatar");
+  if (acc.picture && /^https:\/\//.test(acc.picture)) { av.style.backgroundImage = `url("${acc.picture.replace(/"/g, "")}")`; av.textContent = ""; }
+  else { av.style.backgroundImage = ""; av.textContent = (acc.name || acc.email || "?").trim().charAt(0).toUpperCase(); }
+  $("accLabel").hidden = $("accCard").hidden = !WB.accountRequired();
+  $("fbLabel").hidden = $("fbCard").hidden = !(WB.accountRequired() && WB.ACCOUNT.SCRIPT_URL);
+}
+$("signinBtn").addEventListener("click", async () => {
+  const b = $("signinBtn"); b.disabled = true;
+  $("signinStatus").textContent = "Opening Google sign-in…"; $("signinStatus").className = "status";
+  try {
+    const r = await chrome.runtime.sendMessage({ type: "wb-signin" });
+    if (!r?.ok) throw new Error(r?.error || "Sign-in failed");
+    s.signedIn = true; s.account = r.account;
+    $("signinStatus").textContent = "";
+    showView(); renderAll();
+  } catch (e) {
+    $("signinStatus").textContent = e.message; $("signinStatus").className = "status err";
+  }
+  b.disabled = false;
+});
+$("signoutBtn").addEventListener("click", async () => {
+  await chrome.runtime.sendMessage({ type: "wb-signout" });
+  s.signedIn = false; s.account = null;
+  showView();
+});
+function renderStars() {
+  const box = $("stars"); box.innerHTML = "";
+  for (let i = 1; i <= 5; i++) {
+    const b = el("button", null, "★");
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-label", `${i} star${i > 1 ? "s" : ""}`);
+    b.setAttribute("aria-checked", i <= rating ? "true" : "false");
+    b.onclick = () => { rating = i; renderStars(); };
+    box.appendChild(b);
+  }
+}
+$("fbSend").addEventListener("click", async () => {
+  const st = $("fbStatus");
+  const msg = $("fbText").value.trim();
+  if (!msg && !rating) { st.textContent = "Add a rating or a message first."; st.className = "status err"; return; }
+  $("fbSend").disabled = true; st.textContent = "Sending…"; st.className = "status";
+  try {
+    const r = await chrome.runtime.sendMessage({ type: "wb-feedback", rating, message: msg });
+    if (!r?.ok) throw new Error(r?.error || "Couldn't send feedback");
+    $("fbText").value = ""; rating = 0; renderStars();
+    st.textContent = "Thank you! Your feedback was sent."; st.className = "status ok";
+  } catch (e) { st.textContent = e.message; st.className = "status err"; }
+  $("fbSend").disabled = false;
+});
+
 // ---------- general ----------
 $("enabled").addEventListener("change", () => save({ enabled: $("enabled").checked }));
 $("siteOn").addEventListener("change", () => {
@@ -337,13 +399,16 @@ chrome.storage.onChanged.addListener(ch => {
   if (ch.usage) renderUsage();
   if (ch.history && !$("p-hist").hidden) renderHistory();
   if (ch.models || ch.provider) { renderHeader(); renderProviders(); }
+  if (ch.signedIn || ch.account) showView();
 });
 
 chrome.storage.local.get(null, async data => {
   s = data;
   $("enabled").checked = s.enabled !== false;
   renderAll();
-  if (!$("key").value) $("key").focus();
+  renderStars();
+  showView();
+  if (!$("key").value && !$("mainView").hidden) $("key").focus();
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     site = tab?.url && /^https?:/.test(tab.url) ? new URL(tab.url).hostname : null;
