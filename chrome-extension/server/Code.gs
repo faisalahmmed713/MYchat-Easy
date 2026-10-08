@@ -122,26 +122,37 @@ function upsertUser_(ss, user, body) {
   }
 }
 
-// Limits per user: 1 feedback a minute, 5 a day, and the same message is never saved twice.
+// Limits per user: 1 feedback a minute, 5 a day (UTC), and the same message is never saved twice that day.
+// The daily count is kept in Script Properties (lasts all day); the one-minute pause uses the cache.
 const FEEDBACK_PER_DAY = 5;
 function feedbackLimit_(email, body) {
   const cache = CacheService.getScriptCache();
+  const props = PropertiesService.getScriptProperties();
   const day = Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd");
-  const dayKey = "fb-day:" + day + ":" + email;
-  const minuteKey = "fb-min:" + email;
   const text = String(body.message || "").trim().toLowerCase().replace(/\s+/g, " ");
-  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, email + "|" + body.rating + "|" + text));
-  const dupKey = "fb-dup:" + hash;
+  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, email + "|" + body.rating + "|" + text)).slice(0, 22);
+  const minuteKey = "fb-min:" + email;
+  const dayKey = "fb:" + day + ":" + email;   // value: {"n": count, "h": [hashes sent today]}
 
   if (cache.get(minuteKey)) return "Please wait a minute before sending more feedback.";
-  if (cache.get(dupKey)) return "You already sent this feedback. Thank you!";
-  const count = Number(cache.get(dayKey) || 0);
-  if (count >= FEEDBACK_PER_DAY) return "You've sent " + FEEDBACK_PER_DAY + " messages today. You can send more feedback tomorrow.";
+  let rec = { n: 0, h: [] };
+  try { rec = JSON.parse(props.getProperty(dayKey) || '{"n":0,"h":[]}'); } catch (_) {}
+  if (rec.h.indexOf(hash) >= 0) return "You already sent this feedback. Thank you!";
+  if (rec.n >= FEEDBACK_PER_DAY) return "You've sent " + FEEDBACK_PER_DAY + " messages today. You can send more feedback tomorrow.";
 
+  rec.n += 1; rec.h.push(hash);
+  props.setProperty(dayKey, JSON.stringify(rec));
   cache.put(minuteKey, "1", 60);
-  cache.put(dupKey, "1", 21600);         // 6 hours, the longest the cache allows
-  cache.put(dayKey, String(count + 1), 21600);
+  pruneOldFeedbackDays_(props, day);
   return "";
+}
+
+// Removes daily counters from earlier days so Script Properties never fill up
+function pruneOldFeedbackDays_(props, today) {
+  const keys = props.getKeys();
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].indexOf("fb:") === 0 && keys[i].indexOf("fb:" + today + ":") !== 0) props.deleteProperty(keys[i]);
+  }
 }
 
 function addFeedback_(ss, user, body) {
