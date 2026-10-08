@@ -321,11 +321,12 @@ $("histClear").addEventListener("click", () => { save({ history: [] }); renderHi
 let rating = 0;
 function showView() {
   const needs = WB.accountRequired() && !s.signedIn;
+  document.body.classList.toggle("signed-out", needs);
   $("signinView").hidden = !needs;
   $("mainView").hidden = needs;
   document.querySelector(".nav").hidden = needs;
   document.querySelector(".site").hidden = needs;
-  document.querySelector(".top label.switch").hidden = needs;
+  document.querySelector(".top").hidden = needs;
   const acc = s.account || {};
   $("accName").textContent = acc.name || "Signed in";
   $("accEmail").textContent = acc.email || "";
@@ -337,15 +338,15 @@ function showView() {
 }
 $("signinBtn").addEventListener("click", async () => {
   const b = $("signinBtn"); b.disabled = true;
-  $("signinStatus").textContent = "Opening Google sign-in…"; $("signinStatus").className = "status";
+  $("signinStatus").textContent = "Opening Google sign-in…"; $("signinStatus").className = "sg-cap";
   try {
     const r = await chrome.runtime.sendMessage({ type: "wb-signin" });
     if (!r?.ok) throw new Error(r?.error || "Sign-in failed");
     s.signedIn = true; s.account = r.account;
-    $("signinStatus").textContent = "";
+    $("signinStatus").textContent = "Sign in to use all MYchat Easy features";
     showView(); renderAll();
   } catch (e) {
-    $("signinStatus").textContent = e.message; $("signinStatus").className = "status err";
+    $("signinStatus").textContent = e.message; $("signinStatus").className = "sg-cap err";
   }
   b.disabled = false;
 });
