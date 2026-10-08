@@ -717,11 +717,16 @@
     if (b.dataset.s === "listen") speak(selInfo.text);
   });
 
-  function translateSelection(info, chosen) {
+  // Translates a message you selected on a page into "Your language" (set in the toolbar popup).
+  // Picking another language in the card makes that your language; "Auto" uses the auto pair instead.
+  function translateSelection(info) {
     const langs = WB.languages(settings);
     const [a, b] = WB.autoPair(settings);
-    let to = chosen || ui.selTarget || "auto";
-    if (to !== "auto" && !langs.includes(to)) to = "auto";
+    const useAuto = ui.selTarget === "auto";
+    const my = WB.myLanguage(settings);
+    const to = useAuto ? "auto" : my;
+    // If the message is already in your language, translate it into the other language of the pair
+    const fallback = my === a ? b : a;
     const go = async () => {
       openCard({ title: "Translation", anchor: "rect", rect: info.rect, sticky: true });
       const wrap = document.createElement("div");
@@ -729,19 +734,24 @@
       const label = document.createElement("span"); label.textContent = "Translate to";
       const sel = document.createElement("select");
       fillSelect(sel, langs, to, ["auto", `Auto (${a} ⇄ ${b})`]);
-      sel.onchange = () => { ui.selTarget = sel.value; saveUi(); translateSelection(info, sel.value); };
+      sel.onchange = () => {
+        if (sel.value === "auto") { ui.selTarget = "auto"; }
+        else { ui.selTarget = "lang"; settings.myLang = sel.value; chrome.storage.local.set({ myLang: sel.value }); }
+        saveUi();
+        translateSelection(info);
+      };
       row.append(label, sel);
       const out = document.createElement("div"); out.className = "muted"; out.textContent = "Translating…";
       wrap.append(row, out);
       cardBody(wrap);
       try {
-        const res = await ai({ type: "wb-translate", text: info.text, target: to });
+        const res = await ai({ type: "wb-translate", text: info.text, target: to, fallback: useAuto ? "" : fallback });
         out.className = ""; out.textContent = res.result;
         cardMeta(usageLine(res));
         cardActions([
           { label: "Reply ideas", main: true, onClick: () => replyIdeas(info, "same") },
           { label: "Copy", onClick: () => { copyText(res.result); toast("Copied"); } },
-          { label: "Listen", onClick: () => speak(res.result, to === "auto" ? null : to) }
+          { label: "Listen", onClick: () => speak(res.result, useAuto ? null : to) }
         ]);
         placeCard();
       } catch (e) {

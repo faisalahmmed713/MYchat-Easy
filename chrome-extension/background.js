@@ -21,7 +21,7 @@ const SCRIPT_RULE = "Write each language in its standard native script, except r
 const TRANSLATOR_RULES = `${SCRIPT_RULE}
 Rules: Keep the original meaning, names, numbers, links, emojis and formatting (line breaks, lists). Romanized text (e.g. Banglish, Hinglish, Arabizi) counts as its underlying language. If the input is already in the target language, return it with only spelling and grammar corrected. No explanations, notes, quotes or alternatives. Output ONLY the final text.`;
 
-function buildTranslatePrompt(target, s) {
+function buildTranslatePrompt(target, s, fallback) {
   const tone = TONE_TEXT[s.tone] || TONE_TEXT.natural;
   if (!target || target === "auto") {
     const [a, b] = WB.autoPair(s);
@@ -29,7 +29,10 @@ function buildTranslatePrompt(target, s) {
 Tone: ${tone}.
 ${TRANSLATOR_RULES}`;
   }
-  return `You are a precise, professional translator. Translate the input into ${describeLang(target)}. The input may be in any language, romanized, or mixed.
+  const already = fallback && fallback !== target
+    ? ` If the input is already in ${describeLang(target)}, translate it into ${describeLang(fallback)} instead.`
+    : "";
+  return `You are a precise, professional translator. Translate the input into ${describeLang(target)}. The input may be in any language, romanized, or mixed.${already}
 Tone: ${tone}.
 ${TRANSLATOR_RULES}`;
 }
@@ -230,7 +233,7 @@ async function runTask(task, forceProvider) {
   if (task.type === "write") { system = buildWritePrompt(task, s); label = `Write · ${KIND_LABELS[task.kind] || "Text"}`; }
   else if (task.type === "rewrite") { system = buildRewritePrompt(task); label = `Rewrite · ${(WB.REWRITES.find(r => r.id === task.action) || {}).label || ""}`; }
   else if (task.type === "reply") { system = buildReplyPrompt(task, s); label = "Reply ideas"; }
-  else { system = buildTranslatePrompt(task.target, s); label = `Translate · ${task.target === "auto" ? "Auto" : task.target}`; }
+  else { system = buildTranslatePrompt(task.target, s, task.fallback); label = `Translate · ${task.target === "auto" ? "Auto" : task.target}`; }
 
   const r = await callAI(provider, s, system, task.text);
   if (!r.text) throw new Error("The AI returned an empty response. Try again.");
