@@ -7,7 +7,7 @@
  */
 
 // The same OAuth client ID that is in the extension (ends with .apps.googleusercontent.com)
-const CLIENT_ID = "PASTE_YOUR_CLIENT_ID_HERE";
+const CLIENT_ID = "706538068827-k4cvtbnt61vd9s85561hiiqm9maf2us8.apps.googleusercontent.com";
 
 function doPost(e) {
   try {
