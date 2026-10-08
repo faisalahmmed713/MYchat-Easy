@@ -20,6 +20,8 @@ function doPost(e) {
       if (body.action === "register" || body.action === "ping") {
         upsertUser_(ss, user, body);
       } else if (body.action === "feedback") {
+        const limit = feedbackLimit_(user.email, body);
+        if (limit) return json_({ ok: false, error: limit });
         addFeedback_(ss, user, body);
         upsertUser_(ss, user, body);
       } else {
@@ -83,6 +85,28 @@ function upsertUser_(ss, user, body) {
   } else {
     sh.appendRow([user.email, safe_(user.name, 200), now, now, version, browser]);
   }
+}
+
+// Limits per user: 1 feedback a minute, 5 a day, and the same message is never saved twice.
+const FEEDBACK_PER_DAY = 5;
+function feedbackLimit_(email, body) {
+  const cache = CacheService.getScriptCache();
+  const day = Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd");
+  const dayKey = "fb-day:" + day + ":" + email;
+  const minuteKey = "fb-min:" + email;
+  const text = String(body.message || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, email + "|" + body.rating + "|" + text));
+  const dupKey = "fb-dup:" + hash;
+
+  if (cache.get(minuteKey)) return "Please wait a minute before sending more feedback.";
+  if (cache.get(dupKey)) return "You already sent this feedback. Thank you!";
+  const count = Number(cache.get(dayKey) || 0);
+  if (count >= FEEDBACK_PER_DAY) return "You've sent " + FEEDBACK_PER_DAY + " messages today. You can send more feedback tomorrow.";
+
+  cache.put(minuteKey, "1", 60);
+  cache.put(dupKey, "1", 21600);         // 6 hours, the longest the cache allows
+  cache.put(dayKey, String(count + 1), 21600);
+  return "";
 }
 
 function addFeedback_(ss, user, body) {

@@ -376,6 +376,8 @@ $("fbSend").addEventListener("click", async () => {
     if (!r?.ok) throw new Error(r?.error || "Couldn't send feedback");
     $("fbText").value = ""; rating = 0; renderStars();
     st.textContent = "Thank you! Your feedback was sent."; st.className = "status ok";
+    setTimeout(() => { $("fbSend").disabled = false; }, 30000); // avoid accidental double sends
+    return;
   } catch (e) { st.textContent = e.message; st.className = "status err"; }
   $("fbSend").disabled = false;
 });
