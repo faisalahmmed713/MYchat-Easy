@@ -51,6 +51,10 @@ class BubbleService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!::store.isInitialized) return
         if (panelView != null) { hide(); return }
+        if (event != null && event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED && store.copyBar && isCopyClick(event)) {
+            val pkg = event.packageName?.toString() ?: ""
+            if (pkg != packageName && pkg !in store.bubbleHidden) handler.postDelayed({ showCopyBar(pkg) }, 250)
+        }
         // Fast path: when a text box is tapped, focused or typed in, show the bubble right away for that box
         if (event != null && store.bubbleOn) {
             val t = event.eventType
@@ -131,6 +135,7 @@ class BubbleService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        removeCopyBar()
         closePanel()
         hide()
         instance = null
@@ -236,6 +241,78 @@ class BubbleService : AccessibilityService() {
         toast(this, "Bubble hidden in $name. Turn it back on in MYchat Easy › More.")
     }
 
+    // ---------- toolbar after the user taps Copy in any app ----------
+    private val COPY_WORDS = Regex("^(copy|copy text|কপি|কপি করুন|কপি করো|复制|複製|copiar|copier|kopieren|копировать|salin|kopyala|नकल|कॉपी करें|कॉपी|نسخ|کاپی)$", RegexOption.IGNORE_CASE)
+    private var copyBarView: View? = null
+    private val hideCopyBar = Runnable { removeCopyBar() }
+
+    private fun isCopyClick(e: AccessibilityEvent): Boolean {
+        val words = (e.text.map { it.toString() } + listOfNotNull(e.contentDescription?.toString())).map { it.trim() }
+        return words.any { COPY_WORDS.matches(it) }
+    }
+
+    private fun showCopyBar(appPkg: String) {
+        removeCopyBar()
+        C.init(this)
+        val ctx = android.view.ContextThemeWrapper(this, if (C.dark) android.R.style.Theme_DeviceDefault_NoActionBar else android.R.style.Theme_DeviceDefault_Light_NoActionBar)
+        val bar = hbox(ctx).apply {
+            background = rounded(ctx, C.panel, 99, C.line)
+            elevation = ctx.dp(8).toFloat()
+            setPadding(ctx.dp(6), ctx.dp(6), ctx.dp(6), ctx.dp(6))
+        }
+        val logo = FrameLayout(ctx).apply { background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(C.G1, C.G2)).apply { shape = GradientDrawable.OVAL } }
+        val icon = ImageView(ctx)
+        val id = resources.getIdentifier("ic_launcher_foreground", "mipmap", packageName)
+        if (id != 0) icon.setImageResource(id)
+        logo.addView(icon, FrameLayout.LayoutParams(ctx.dp(34), ctx.dp(34)))
+        bar.addView(logo, android.widget.LinearLayout.LayoutParams(ctx.dp(34), ctx.dp(34)))
+        fun action(label: String, what: String) = text(ctx, label, 14f, C.ink, true).apply {
+            setPadding(ctx.dp(12), ctx.dp(8), ctx.dp(12), ctx.dp(8))
+            background = ripple(rounded(ctx, android.graphics.Color.TRANSPARENT, 99))
+            isClickable = true
+            setOnClickListener { removeCopyBar(); openFromCopy(appPkg, what) }
+        }
+        bar.add(action("Translate", "translate"), 4, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        bar.add(action("Reply ideas", "reply"), 0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        bar.add(action("Listen", "listen"), 0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        bar.add(text(ctx, "✕", 13f, C.muted).apply {
+            setPadding(ctx.dp(10), ctx.dp(8), ctx.dp(8), ctx.dp(8)); isClickable = true; setOnClickListener { removeCopyBar() }
+        }, 0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            val kb = keyboardTop()
+            y = if (kb > 0) resources.displayMetrics.heightPixels - kb + ctx.dp(12) else ctx.dp(110)
+            windowAnimations = android.R.style.Animation_Toast
+        }
+        try { wm.addView(bar, lp); copyBarView = bar; handler.postDelayed(hideCopyBar, 6000) } catch (_: Exception) { }
+    }
+
+    private fun removeCopyBar() {
+        handler.removeCallbacks(hideCopyBar)
+        val v = copyBarView ?: return
+        copyBarView = null
+        try { wm.removeView(v) } catch (_: Exception) { }
+    }
+
+    /** Opens the panel with what the user just copied, and starts the chosen action. */
+    private fun openFromCopy(appPkg: String, what: String) {
+        // if the chat box in that app is ready, reply ideas can be inserted straight into it
+        val box = findFocusedInput()?.takeIf { usable(it) && it.packageName?.toString() == appPkg }
+        pending = box?.let {
+            it.refresh()
+            val full = if (it.isShowingHintText) "" else it.text?.toString() ?: ""
+            Pending(it, full, full.length, full.length)
+        }
+        hide()
+        showPanel("", clipAction = what, repliesOnly = true)
+    }
+
     // ---------- open the panel over the current app, then write the result back ----------
     private var panelView: View? = null
 
@@ -257,8 +334,8 @@ class BubbleService : AccessibilityService() {
         showPanel(if (hasSel) full.substring(s, e) else full)
     }
 
-    private fun showPanel(text: String) {
-        try { buildPanel(text) } catch (e: Throwable) {
+    private fun showPanel(text: String, clipAction: String? = null, repliesOnly: Boolean = false) {
+        try { buildPanel(text, clipAction, repliesOnly) } catch (e: Throwable) {
             panelView = null
             toast(this, "Couldn't open the MYchat Easy panel (${e.javaClass.simpleName}). Open MYchat Easy to see details.")
             CrashReport.save(this, e)
@@ -266,13 +343,31 @@ class BubbleService : AccessibilityService() {
         }
     }
 
-    private fun buildPanel(text: String) {
+    private fun buildPanel(text: String, clipAction: String? = null, repliesOnly: Boolean = false) {
         closePanel()
+        removeCopyBar()
+        var panelRef: ToolPanel? = null
+        var clipDone = clipAction == null
         C.init(this)
         val ctx = android.view.ContextThemeWrapper(this,
             if (C.dark) android.R.style.Theme_DeviceDefault_NoActionBar else android.R.style.Theme_DeviceDefault_Light_NoActionBar)
 
         val root = object : FrameLayout(ctx) {
+            override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+                super.onWindowFocusChanged(hasWindowFocus)
+                if (!hasWindowFocus || clipDone) return
+                clipDone = true
+                val copied = pasteText(this@BubbleService)?.trim().orEmpty()
+                val p = panelRef ?: return
+                if (copied.isBlank()) { toast(this@BubbleService, "Nothing was copied. Copy a message first."); return }
+                p.load(copied.take(5000))
+                when (clipAction) {
+                    "translate" -> p.translateToMine()
+                    "reply" -> p.replyIdeas()
+                    "listen" -> Speaker.speak(this@BubbleService, copied, null)
+                }
+            }
+
             override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
                 if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
                     if (event.action == android.view.KeyEvent.ACTION_UP) closePanel()
@@ -305,9 +400,10 @@ class BubbleService : AccessibilityService() {
         if (Config.ORDER.none { store.hasKey(it) }) {
             body.add(text(ctx, "Add a free API key first: open MYchat Easy › AI.", 13.5f, C.err), 0)
         }
-        val panel = ToolPanel(ctx, store, text, { result -> closePanel(); replaceText(result) }, OverlayVoice()) { v ->
+        val panel = ToolPanel(ctx, store, text, { result -> closePanel(); replaceText(result) }, OverlayVoice(), repliesOnly) { v ->
             scroll.post { scroll.smoothScrollTo(0, (v.top + (v.parent as View).top - ctx.dp(12)).coerceAtLeast(0)) }
         }
+        panelRef = panel
         body.add(panel.view, 4)
         scroll.addView(body, FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT))
         sheet.addView(scroll, android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT))

@@ -122,6 +122,13 @@ class MainActivity : Activity(), VoiceHost {
                 setOnCheckedChangeListener { _, v -> s.bubbleOn = v }
             }
             c.add(sw, 10)
+            val cb = Switch(this).apply {
+                text = "Show Translate / Reply ideas after I copy a message"
+                setTextColor(C.ink)
+                isChecked = s.copyBar
+                setOnCheckedChangeListener { _, v -> s.copyBar = v }
+            }
+            c.add(cb, 6)
         } else {
             c.add(text(this, "Turn it on once and a MYchat Easy bubble appears next to the text box in WhatsApp, Messenger, Facebook and every other app.", 13.5f, C.muted), 6)
             c.add(primary(this, "Turn on the bubble") { showBubbleDisclosure() }, 12)

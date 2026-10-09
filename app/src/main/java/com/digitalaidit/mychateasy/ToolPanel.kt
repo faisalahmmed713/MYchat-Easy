@@ -28,6 +28,7 @@ class ToolPanel(
     initialText: String,
     private val onReplace: ((String) -> Unit)?,
     private val voice: VoiceHost,
+    private val repliesOnly: Boolean = false,  // true: only reply ideas can be inserted (the text came from someone else)
     private val onResultShown: (View) -> Unit = {}
 ) {
     val view: LinearLayout = vbox(act)
@@ -257,6 +258,23 @@ class ToolPanel(
         }
     }
 
+    // ---------- started by the bubble's copy toolbar ----------
+    fun load(text: String) { input.setText(text); input.setSelection(input.text.length) }
+
+    /** Translates into "Your language"; if it's already in that language, into the other language of the Auto pair. */
+    fun translateToMine() {
+        mode = "tr"; renderTabs(); renderOptions()
+        val my = s.myLang
+        val (a, b) = s.autoPair
+        run(Task("translate", target = my, fallback = if (my == a) b else a), "Translation · $my", my)
+    }
+
+    fun replyIdeas() {
+        mode = "re"; renderTabs(); renderOptions()
+        val lang = s.ui("replyLang", "same")
+        run(Task("reply", lang = lang), "Reply ideas", if (lang == "same") null else lang)
+    }
+
     private fun actionsRow(): FlowLayout = flow(act)
 
     private fun alive(): Boolean = (act as? Activity)?.isFinishing != true && view.isAttachedToWindow
@@ -332,7 +350,7 @@ class ToolPanel(
         } else {
             result.add(text(act, r.text, 17f).apply { setTextIsSelectable(true); setLineSpacing(0f, 1.25f) }, 8)
             result.add(text(act, meta, 12f, C.muted), 10)
-            if (onReplace != null) result.add(primary(act, "✓  Replace") { onReplace.invoke(r.text) }, 14)
+            if (onReplace != null && !repliesOnly) result.add(primary(act, "✓  Replace") { onReplace.invoke(r.text) }, 14)
             val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
             listOf<Triple<String, String, () -> Unit>>(
                 Triple("⧉", "Copy") { copyText(act, r.text) },

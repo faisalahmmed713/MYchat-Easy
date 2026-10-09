@@ -115,6 +115,11 @@ class Store(ctx: Context) {
         get() = sp.getLong("promoAt", 0L)
         set(v) = sp.edit().putLong("promoAt", v).apply()
 
+    // ---------- toolbar after Copy ----------
+    var copyBar: Boolean
+        get() = sp.getBoolean("copyBar", true)
+        set(v) = sp.edit().putBoolean("copyBar", v).apply()
+
     // ---------- floating bubble ----------
     var popupBlocked: Boolean
         get() = sp.getBoolean("popupBlocked", false)
