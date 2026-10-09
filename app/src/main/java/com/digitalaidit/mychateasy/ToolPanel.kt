@@ -1,6 +1,9 @@
 package com.digitalaidit.mychateasy
 
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.view.WindowManager
 import android.app.AlertDialog
 import android.graphics.Color
 import android.view.Gravity
@@ -20,7 +23,7 @@ interface VoiceHost {
  * when you select text in another app. [onReplace] is non-null only when the other app lets us replace its text.
  */
 class ToolPanel(
-    private val act: Activity,
+    private val act: Context,           // an Activity, or the bubble service (panel drawn over other apps)
     private val s: Store,
     initialText: String,
     private val onReplace: ((String) -> Unit)?,
@@ -132,14 +135,16 @@ class ToolPanel(
 
     private fun pickVoiceLang() {
         val all = Config.voiceLanguages(s.languages)
-        AlertDialog.Builder(act)
+        val dlg = AlertDialog.Builder(act)
             .setTitle("I'll speak in")
             .setSingleChoiceItems(all.toTypedArray(), all.indexOf(s.voiceLang)) { d, which ->
                 s.voiceLang = all[which]
                 (view.findViewWithTag<TextView>("micLang"))?.text = "Speak in ${s.voiceLang} ▾"
                 d.dismiss()
             }
-            .show()
+            .create()
+        if (act !is Activity) dlg.window?.setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+        dlg.show()
     }
 
     // ---------- tabs & options ----------
@@ -242,17 +247,28 @@ class ToolPanel(
         bg {
             try {
                 val r = Ai.run(s, task)
-                ui { if (!act.isFinishing) showResult(r, title, speakLang) { run(t, title, speakLang) } }
+                ui { if (alive()) showResult(r, title, speakLang) { run(t, title, speakLang) } }
             } catch (e: SigninRequired) {
-                ui { if (!act.isFinishing) showSignin { run(t, title, speakLang) } }
+                ui { if (alive()) showSignin { run(t, title, speakLang) } }
             } catch (e: Exception) {
                 val msg = e.message ?: "Something went wrong."
-                ui { if (!act.isFinishing) showError(msg) { run(t, title, speakLang) } }
+                ui { if (alive()) showError(msg) { run(t, title, speakLang) } }
             }
         }
     }
 
     private fun actionsRow(): FlowLayout = flow(act)
+
+    private fun alive(): Boolean = (act as? Activity)?.isFinishing != true && view.isAttachedToWindow
+
+    private fun share(text: String) {
+        val a = act as? Activity
+        if (a != null) { shareText(a, text); return }
+        try {
+            act.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share with")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) { copyText(act, text); toast(act, "Copied") }
+    }
 
     /** A round, quiet icon button (Paste, Clear, Copy…). */
     private fun iconBtn(icon: String, desc: String, onClick: () -> Unit): TextView = text(act, icon, 15f, C.ink).apply {
@@ -304,7 +320,7 @@ class ToolPanel(
                 if (onReplace != null) row.add(primary(act, "Use") { onReplace.invoke(reply) }.apply { setPadding(act.dp(18), act.dp(8), act.dp(18), act.dp(8)) }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
                 row.addView(spacer(act))
                 row.add(iconBtn("⧉", "Copy") { copyText(act, reply) }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
-                row.add(iconBtn("↗", "Share") { shareText(act, reply) }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
+                row.add(iconBtn("↗", "Share") { share(reply) }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
                 row.add(iconBtn("🔊", "Listen") { Speaker.speak(act, reply, speakLang) }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
                 box.add(row, 10)
                 result.add(box, 10)
@@ -320,7 +336,7 @@ class ToolPanel(
             val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
             listOf<Triple<String, String, () -> Unit>>(
                 Triple("⧉", "Copy") { copyText(act, r.text) },
-                Triple("↗", "Share") { shareText(act, r.text) },
+                Triple("↗", "Share") { share(r.text) },
                 Triple("🔊", "Listen") { Speaker.speak(act, r.text, speakLang) },
                 Triple("↻", "Retry") { retry() },
                 Triple("✎", "Edit") { input.setText(r.text); input.setSelection(input.text.length); input.requestFocus(); Unit }
@@ -340,7 +356,15 @@ class ToolPanel(
         val status = text(act, "", 13f, C.err)
         result.add(primary(act, "Sign in with Google") {
             status.text = "Opening Google sign-in…"; status.setTextColor(C.muted)
-            Account.signIn(act, s) { err ->
+            val a = act as? Activity
+            if (a == null) {   // in the bubble: sign-in needs the app itself
+                try {
+                    act.startActivity(Intent(act, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (_: Exception) { }
+                toast(act, "Open MYchat Easy and sign in, then use the bubble again.")
+                return@primary
+            }
+            Account.signIn(a, s) { err ->
                 if (err == null) { toast(act, "Signed in as ${s.accountEmail}"); retry() }
                 else { status.text = err; status.setTextColor(C.err) }
             }

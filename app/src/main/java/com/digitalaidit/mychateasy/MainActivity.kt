@@ -128,6 +128,20 @@ class MainActivity : Activity(), VoiceHost {
         return c
     }
 
+    // ---------- microphone for voice inside the bubble ----------
+    private fun micCard(): LinearLayout {
+        val c = card(this)
+        c.add(text(this, "🎤 Voice in the bubble", 15.5f, C.ink, true))
+        c.add(text(this, "Allow the microphone once so you can speak instead of typing in any chat.", 13.5f, C.muted), 6)
+        c.add(primary(this, "Allow microphone") { requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_MIC) }, 10)
+        return c
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_MIC) render()
+    }
+
     // ---------- keeping the bubble running ----------
     private fun ignoringBattery(): Boolean = try {
         (getSystemService(POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(packageName)
@@ -448,11 +462,12 @@ class MainActivity : Activity(), VoiceHost {
         tip.add(text(this, "Turn on the floating bubble below and it appears next to the text box in any app.", 13.5f, 0xE6FFFFFF.toInt()), 4)
         tip.isClickable = true
         tip.setOnClickListener { tab = "more"; render() }
-        content.add(tip)
+        val bubbleRunning = BubbleService.isEnabled(this) && BubbleService.instance != null
+        if (!bubbleRunning) content.add(tip)   // once the bubble is on, this hint isn't needed
         if (!BubbleService.isEnabled(this)) content.add(bubbleCard(), 12)
         else if (BubbleService.instance == null) content.add(bubbleStoppedCard(), 12)
         else if (!ignoringBattery()) content.add(batteryCard(), 12)
-        else if (s.popupBlocked || (popupBrand() && !getSharedPreferences("mychat_easy", MODE_PRIVATE).getBoolean("popupHintDone", false))) content.add(popupCard(), 12)
+        if (BubbleService.isEnabled(this) && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) content.add(micCard(), 12)
 
         if (Config.ORDER.none { s.hasKey(it) }) {
             val warn = card(this)
@@ -775,7 +790,7 @@ class MainActivity : Activity(), VoiceHost {
 
         section("About")
         val about = card(this)
-        about.add(text(this, "MYchat Easy by Digital Aid IT", 14.5f, C.ink, true))
+        about.add(text(this, "MYchat Easy by Digital Aid IT · version ${Account.appVersion}", 14.5f, C.ink, true))
         about.add(text(this, "Your keys, settings and history stay on this phone. Text goes only to the AI you choose, only when you tap.", 13f, C.muted), 4)
         val links = hbox(this)
         links.add(link(this, "digitalaidit.com") { openUrl("https://digitalaidit.com") }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -834,5 +849,6 @@ class MainActivity : Activity(), VoiceHost {
 
     companion object {
         const val REQ_VOICE = 7001
+        const val REQ_MIC = 7002
     }
 }

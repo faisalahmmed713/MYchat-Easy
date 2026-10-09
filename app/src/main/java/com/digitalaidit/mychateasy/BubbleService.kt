@@ -62,8 +62,11 @@ class BubbleService : AccessibilityService() {
         handler.postDelayed(check, 80)
     }
 
+    private fun isTextBox(n: AccessibilityNodeInfo): Boolean =
+        n.isEditable || (n.className?.toString()?.endsWith("EditText") == true)
+
     private fun usable(n: AccessibilityNodeInfo): Boolean {
-        if (!n.isEditable || n.isPassword) return false
+        if (!isTextBox(n) || n.isPassword) return false
         val pkg = n.packageName?.toString() ?: return false
         return pkg != packageName && pkg !in store.bubbleHidden
     }
@@ -80,13 +83,27 @@ class BubbleService : AccessibilityService() {
 
     // Finds the focused text box in the active window, or in any window on screen (some apps need this)
     private fun findFocusedInput(): AccessibilityNodeInfo? {
-        try { rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { if (it.isEditable) return it } } catch (_: Exception) { }
+        try { rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { if (isTextBox(it)) return it } } catch (_: Exception) { }
         try {
             for (w in windows) {
                 if (w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) continue
-                w.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { if (it.isEditable) return it }
+                w.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { if (isTextBox(it)) return it }
             }
         } catch (_: Exception) { }
+        // Last resort for apps that don't report input focus (e.g. WeChat): look for a focused text box on screen
+        try { rootInActiveWindow?.let { scanForFocusedBox(it) }?.let { return it } } catch (_: Exception) { }
+        return null
+    }
+
+    private fun scanForFocusedBox(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var seen = 0
+        while (queue.isNotEmpty() && seen < 400) {
+            val n = queue.removeFirst(); seen++
+            if (n.isFocused && isTextBox(n) && n.isVisibleToUser) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
         return null
     }
 
@@ -99,6 +116,7 @@ class BubbleService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        closePanel()
         hide()
         instance = null
         super.onDestroy()
@@ -190,7 +208,9 @@ class BubbleService : AccessibilityService() {
         toast(this, "Bubble hidden in $name. Turn it back on in MYchat Easy › More.")
     }
 
-    // ---------- open the panel, then write the result back ----------
+    // ---------- open the panel over the current app, then write the result back ----------
+    private var panelView: View? = null
+
     private fun openPanel() {
         val node = target ?: return
         node.refresh()
@@ -200,27 +220,131 @@ class BubbleService : AccessibilityService() {
         val hasSel = s >= 0 && e > s && e <= full.length
         pending = Pending(node, full, if (hasSel) s else 0, if (hasSel) e else full.length)
         hide()
-        panelShown = false
-        val i = Intent(this, ProcessTextActivity::class.java)
-            .setAction(ProcessTextActivity.ACTION_BUBBLE)
-            .putExtra(ProcessTextActivity.EXTRA_TEXT, if (hasSel) full.substring(s, e) else full)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        try { startActivity(i) } catch (_: Exception) { }
-        // Some phones (vivo, Xiaomi, Oppo…) silently block apps from opening a screen from the background.
-        // If the panel didn't open, bring the bubble back and explain what to allow.
-        handler.postDelayed({
-            if (!panelShown) {
-                store.popupBlocked = true
-                refresh()
-                toast(this, "Your phone blocked the MYchat Easy panel. Open MYchat Easy › Home and tap \"Allow pop-ups\".")
-            }
-        }, 1800)
+        showPanel(if (hasSel) full.substring(s, e) else full)
     }
 
-    /** Called by the panel when it opens, so we know the phone allowed it. */
-    fun panelOpened() {
-        panelShown = true
-        if (store.popupBlocked) store.popupBlocked = false
+    private fun showPanel(text: String) {
+        closePanel()
+        C.init(this)
+        val ctx = android.view.ContextThemeWrapper(this,
+            if (C.dark) android.R.style.Theme_DeviceDefault_NoActionBar else android.R.style.Theme_DeviceDefault_Light_NoActionBar)
+
+        val root = object : FrameLayout(ctx) {
+            override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+                if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+                    if (event.action == android.view.KeyEvent.ACTION_UP) closePanel()
+                    return true
+                }
+                return super.dispatchKeyEvent(event)
+            }
+        }
+        root.setBackgroundColor(0x80000000.toInt())
+        root.isClickable = true
+        root.setOnClickListener { closePanel() }
+
+        val sheet = MaxHeightBox(ctx, 0.88f).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            isClickable = true
+            val r = ctx.dp(22).toFloat()
+            background = GradientDrawable().apply { setColor(C.bg); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
+        }
+        val handle = View(ctx).apply { background = rounded(ctx, C.line, 99) }
+        sheet.addView(handle, android.widget.LinearLayout.LayoutParams(ctx.dp(40), ctx.dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ctx.dp(10) })
+        val header = hbox(ctx).apply { setPadding(ctx.dp(18), ctx.dp(10), ctx.dp(10), ctx.dp(4)) }
+        val logo = ImageView(ctx).apply { setImageResource(applicationInfo.icon) }
+        header.addView(logo, android.widget.LinearLayout.LayoutParams(ctx.dp(30), ctx.dp(30)))
+        header.add(text(ctx, "MYchat Easy", 16.5f, C.ink, true), 10, 0, 1f)
+        header.add(link(ctx, "✕") { closePanel() }, 0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        sheet.add(header)
+
+        val scroll = android.widget.ScrollView(ctx)
+        val body = vbox(ctx).apply { setPadding(ctx.dp(16), ctx.dp(6), ctx.dp(16), ctx.dp(20)) }
+        if (Config.ORDER.none { store.hasKey(it) }) {
+            body.add(text(ctx, "Add a free API key first: open MYchat Easy › AI.", 13.5f, C.err), 0)
+        }
+        val panel = ToolPanel(ctx, store, text, { result -> closePanel(); replaceText(result) }, OverlayVoice()) { v ->
+            scroll.post { scroll.smoothScrollTo(0, (v.top + (v.parent as View).top - ctx.dp(12)).coerceAtLeast(0)) }
+        }
+        body.add(panel.view, 4)
+        scroll.addView(body, FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT))
+        sheet.addView(scroll, android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(sheet, FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+
+        // keep the sheet above the navigation bar and the keyboard
+        root.setOnApplyWindowInsetsListener { v, ins ->
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val i = ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.ime())
+                v.setPadding(i.left, i.top, i.right, i.bottom)
+            } else {
+                @Suppress("DEPRECATION") v.setPadding(ins.systemWindowInsetLeft, ins.systemWindowInsetTop, ins.systemWindowInsetRight, ins.systemWindowInsetStableBottom)
+            }
+            ins
+        }
+
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            // Android 11+: we pad for the keyboard ourselves (insets); older versions resize the window instead
+            softInputMode = (if (android.os.Build.VERSION.SDK_INT >= 30) WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+                else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE) or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+            windowAnimations = android.R.style.Animation_InputMethod
+        }
+        try {
+            wm.addView(root, lp)
+            panelView = root
+        } catch (e: Exception) {
+            toast(this, "Couldn't open the MYchat Easy panel: ${e.javaClass.simpleName}")
+        }
+    }
+
+    private fun closePanel() {
+        val v = panelView ?: return
+        panelView = null
+        try { hideKeyboard(v) } catch (_: Exception) { }
+        try { wm.removeView(v) } catch (_: Exception) { }
+        handler.postDelayed(check, 250)
+    }
+
+    /** Voice input inside the bubble panel, with the phone's speech recognizer (needs the microphone permission). */
+    private inner class OverlayVoice : VoiceHost {
+        override fun startVoice(langName: String, onText: (String) -> Unit) {
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                toast(this@BubbleService, "Allow the microphone first: open MYchat Easy › Home › Allow microphone.")
+                return
+            }
+            if (!android.speech.SpeechRecognizer.isRecognitionAvailable(this@BubbleService)) {
+                toast(this@BubbleService, "Voice typing needs the Google app or another speech service.")
+                return
+            }
+            val sr = android.speech.SpeechRecognizer.createSpeechRecognizer(this@BubbleService)
+            val i = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, Config.langCode(langName) ?: "en-US")
+            sr.setRecognitionListener(object : android.speech.RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) { toast(this@BubbleService, "Listening… speak in $langName") }
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+                override fun onError(error: Int) {
+                    sr.destroy()
+                    toast(this@BubbleService, if (error == android.speech.SpeechRecognizer.ERROR_NO_MATCH || error == android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
+                        "Didn't catch that. Try again." else "Voice input stopped (error $error).")
+                }
+                override fun onResults(results: Bundle?) {
+                    sr.destroy()
+                    val said = results?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                    if (!said.isNullOrBlank()) onText(said)
+                }
+                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+            sr.startListening(i)
+        }
     }
 
     /** Called by the panel when the user taps Replace or Use. */
@@ -250,7 +374,7 @@ class BubbleService : AccessibilityService() {
                 toast(this, "This box didn't accept the text. It's copied, so long-press the box and tap Paste.")
             }
             pending = null
-        }, 400)
+        }, 150)
     }
 
     companion object {
