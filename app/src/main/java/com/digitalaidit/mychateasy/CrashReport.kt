@@ -30,6 +30,16 @@ object CrashReport {
         }
     }
 
+    /** Saves a problem we caught (not a crash), so it can be shown the next time the app opens. */
+    fun save(ctx: Context, e: Throwable) {
+        try {
+            val sw = StringWriter(); e.printStackTrace(PrintWriter(sw))
+            val version = try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (_: Exception) { "?" }
+            val text = "MYchat Easy $version · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n(caught, not a crash)\n\n" + sw.toString().take(6000)
+            ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("last", text).apply()
+        } catch (_: Throwable) { }
+    }
+
     fun showIfAny(act: Activity) {
         val sp = act.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val text = sp.getString("last", null) ?: return

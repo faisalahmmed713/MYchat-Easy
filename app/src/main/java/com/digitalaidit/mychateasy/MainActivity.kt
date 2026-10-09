@@ -91,6 +91,7 @@ class MainActivity : Activity(), VoiceHost {
 
     override fun onResume() {
         super.onResume()
+        if (::content.isInitialized) CrashReport.showIfAny(this)
         if (::content.isInitialized && Account.signedIn(s)) Account.dailyCheckIn(this, s)
         if (::content.isInitialized && (tab == "home" || tab == "more")) render()
     }
@@ -462,8 +463,7 @@ class MainActivity : Activity(), VoiceHost {
         tip.add(text(this, "Turn on the floating bubble below and it appears next to the text box in any app.", 13.5f, 0xE6FFFFFF.toInt()), 4)
         tip.isClickable = true
         tip.setOnClickListener { tab = "more"; render() }
-        val bubbleRunning = BubbleService.isEnabled(this) && BubbleService.instance != null
-        if (!bubbleRunning) content.add(tip)   // once the bubble is on, this hint isn't needed
+        if (!BubbleService.isEnabled(this)) content.add(tip)   // once the bubble is turned on, this hint isn't needed
         if (!BubbleService.isEnabled(this)) content.add(bubbleCard(), 12)
         else if (BubbleService.instance == null) content.add(bubbleStoppedCard(), 12)
         else if (!ignoringBattery()) content.add(batteryCard(), 12)
@@ -791,6 +791,11 @@ class MainActivity : Activity(), VoiceHost {
         section("About")
         val about = card(this)
         about.add(text(this, "MYchat Easy by Digital Aid IT · version ${Account.appVersion}", 14.5f, C.ink, true))
+        about.add(text(this, "Bubble: " + when {
+            !BubbleService.isEnabled(this) -> "off"
+            BubbleService.instance == null -> "turned on but stopped by the phone"
+            else -> "running"
+        }, 13f, C.muted), 2)
         about.add(text(this, "Your keys, settings and history stay on this phone. Text goes only to the AI you choose, only when you tap.", 13f, C.muted), 4)
         val links = hbox(this)
         links.add(link(this, "digitalaidit.com") { openUrl("https://digitalaidit.com") }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)

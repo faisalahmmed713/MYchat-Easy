@@ -44,11 +44,13 @@ class BubbleService : AccessibilityService() {
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         store = Store(this)
         C.init(this)
+        CrashReport.install(this)
         handler.post(check)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!::store.isInitialized) return
+        if (panelView != null) { hide(); return }
         // Fast path: when a text box is tapped, focused or typed in, show the bubble right away for that box
         if (event != null && store.bubbleOn) {
             val t = event.eventType
@@ -95,6 +97,19 @@ class BubbleService : AccessibilityService() {
         return null
     }
 
+    /** Top edge of the on-screen keyboard, or 0 when no keyboard is showing. */
+    private fun keyboardTop(): Int = try {
+        val w = windows.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        if (w == null) 0 else { val r = Rect(); w.getBoundsInScreen(r); if (r.height() > dp(100)) r.top else 0 }
+    } catch (e: Exception) { 0 }
+
+    /** Package of the app window the user is in. */
+    private fun activeAppPackage(): String = try {
+        rootInActiveWindow?.packageName?.toString()
+            ?: windows.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive }?.root?.packageName?.toString()
+            ?: ""
+    } catch (e: Exception) { "" }
+
     private fun scanForFocusedBox(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -125,9 +140,22 @@ class BubbleService : AccessibilityService() {
     // ---------- tracking the focused text box ----------
     private fun refresh() {
         if (!::store.isInitialized) return
+        if (panelView != null) { hide(); return }
         if (!store.bubbleOn) { hide(); return }
         val node = findFocusedInput()
         if (node != null && usable(node) && showFor(node)) return
+        // Keyboard is open but the app hides its text box (e.g. WeChat): show the bubble just above the keyboard.
+        // The result is copied for the user to paste.
+        if (node == null) {
+            val kb = keyboardTop()
+            val appPkg = activeAppPackage()
+            if (kb > 0 && appPkg.isNotBlank() && appPkg != packageName && appPkg !in store.bubbleHidden) {
+                target = null
+                targetPkg = appPkg
+                show(Rect(0, kb, resources.displayMetrics.widthPixels, kb + 1))
+                return
+            }
+        }
         // Some apps don't report focus reliably: keep the bubble while the last text box is still focused on screen
         val last = target
         if (node == null && last != null && bubble != null) {
@@ -212,7 +240,13 @@ class BubbleService : AccessibilityService() {
     private var panelView: View? = null
 
     private fun openPanel() {
-        val node = target ?: return
+        val node = target
+        if (node == null) {          // keyboard-only mode: no text box we can write to
+            pending = null
+            hide()
+            showPanel(pasteText(this)?.takeIf { it.length < 2000 } ?: "")
+            return
+        }
         node.refresh()
         val full = if (node.isShowingHintText) "" else node.text?.toString() ?: ""
         val s = node.textSelectionStart
@@ -224,6 +258,15 @@ class BubbleService : AccessibilityService() {
     }
 
     private fun showPanel(text: String) {
+        try { buildPanel(text) } catch (e: Throwable) {
+            panelView = null
+            toast(this, "Couldn't open the MYchat Easy panel (${e.javaClass.simpleName}). Open MYchat Easy to see details.")
+            CrashReport.save(this, e)
+            handler.postDelayed(check, 300)
+        }
+    }
+
+    private fun buildPanel(text: String) {
         closePanel()
         C.init(this)
         val ctx = android.view.ContextThemeWrapper(this,
@@ -293,12 +336,9 @@ class BubbleService : AccessibilityService() {
                 else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE) or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
             windowAnimations = android.R.style.Animation_InputMethod
         }
-        try {
-            wm.addView(root, lp)
-            panelView = root
-        } catch (e: Exception) {
-            toast(this, "Couldn't open the MYchat Easy panel: ${e.javaClass.simpleName}")
-        }
+        wm.addView(root, lp)
+        panelView = root
+        hide()
     }
 
     private fun closePanel() {
