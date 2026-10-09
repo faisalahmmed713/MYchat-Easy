@@ -11,8 +11,8 @@ android {
         applicationId = "com.digitalaidit.mychateasy"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.2.2"
+        versionCode = 6
+        versionName = "1.2.3"
     }
 
     // A fixed debug key, so each new APK installs over the previous one without uninstalling
@@ -28,6 +28,10 @@ android {
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
+            // Shared with users, so behave like a release build: not debuggable
+            // (phone security checks flag debuggable apps, and it would let a USB cable read the app's saved keys)
+            isDebuggable = false
+            isJniDebuggable = false
         }
         release {
             isMinifyEnabled = false
