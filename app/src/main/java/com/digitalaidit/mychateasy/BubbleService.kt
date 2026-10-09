@@ -276,7 +276,7 @@ class BubbleService : AccessibilityService() {
                 val i = ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.ime())
                 v.setPadding(i.left, i.top, i.right, i.bottom)
             } else {
-                @Suppress("DEPRECATION") v.setPadding(ins.systemWindowInsetLeft, ins.systemWindowInsetTop, ins.systemWindowInsetRight, ins.systemWindowInsetStableBottom)
+                @Suppress("DEPRECATION") v.setPadding(ins.systemWindowInsetLeft, ins.systemWindowInsetTop, ins.systemWindowInsetRight, ins.stableInsetBottom)
             }
             ins
         }
