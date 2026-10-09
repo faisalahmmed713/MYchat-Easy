@@ -203,7 +203,8 @@ object Ai {
         return JSONObject(res.second) to model
     }
 
-    private fun callAI(s: Store, p: String, system: String, text: String): Raw {
+    // fast = skip the model's "thinking" step. Used for everything except long writing, where planning helps the structure.
+    private fun callAI(s: Store, p: String, system: String, text: String, fast: Boolean = true): Raw {
         val model = s.model(p)
         val who = Config.provider(p).label
         when (p) {
@@ -212,7 +213,7 @@ object Ai {
                     .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                     .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text)))))
                 // Faster answers: these tasks don't need the model to "think" first
-                if (Regex("flash", RegexOption.IGNORE_CASE).containsMatchIn(model))
+                if (fast && Regex("flash", RegexOption.IGNORE_CASE).containsMatchIn(model))
                     body.put("generationConfig", JSONObject().put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
                 val (d, used) = geminiCall(s, model, body)
                 val cand = d.optJSONArray("candidates")?.optJSONObject(0)
@@ -254,7 +255,7 @@ object Ai {
                     .put(JSONObject().put("role", "system").put("content", system))
                     .put(JSONObject().put("role", "user").put("content", text)))
                 // Reasoning models think before answering; keep that short so answers come back fast
-                if (Regex("gpt-oss|^o\\d|^gpt-5|deepseek-r1|qwq", RegexOption.IGNORE_CASE).containsMatchIn(model)) body.put("reasoning_effort", "low")
+                if (Regex("gpt-oss|^o\\d|^gpt-5|deepseek-r1|qwq", RegexOption.IGNORE_CASE).containsMatchIn(model)) body.put("reasoning_effort", if (fast) "low" else "medium")
                 val headers = mapOf("content-type" to "application/json", "authorization" to "Bearer ${s.key(p)}")
                 var r = http("$base/chat/completions", "POST", headers, body.toString())
                 if (r.first == 400 && body.has("reasoning_effort") && Regex("reasoning", RegexOption.IGNORE_CASE).containsMatchIn(errorText(r.second))) {
@@ -295,7 +296,7 @@ object Ai {
         }
         val started = System.currentTimeMillis()
         val raw = try {
-            callAI(s, p, system, t.text)
+            callAI(s, p, system, t.text, fast = !(t.type == "write" && t.length == "long"))
         } catch (e: AiException) {
             throw e
         } catch (e: IOException) {
