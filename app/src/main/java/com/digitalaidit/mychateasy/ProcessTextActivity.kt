@@ -24,6 +24,7 @@ class ProcessTextActivity : Activity(), VoiceHost {
         C.init(this)
         val s = Store(this)
         Account.appVersion = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
+        CrashReport.install(this)
 
         val action = intent?.action
         val fromBubble = action == ACTION_BUBBLE

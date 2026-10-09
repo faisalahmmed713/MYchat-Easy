@@ -40,11 +40,26 @@ object Account {
 
     /** Shows Google's account picker. [done] runs on the main thread with an error message, or null on success. */
     fun signIn(act: Activity, s: Store, done: (String?) -> Unit) {
+        // First: Google's bottom-sheet account picker (all Google accounts on the phone)
         val nonce = UUID.randomUUID().toString()
-        val option = GetSignInWithGoogleOption.Builder(Config.WEB_CLIENT_ID).setNonce(nonce).build()
-        val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
-        request(act, request, nonce, s, interactive = true, done)
+        val sheet = GetGoogleIdOption.Builder()
+            .setServerClientId(Config.WEB_CLIENT_ID)
+            .setFilterByAuthorizedAccounts(false)
+            .setAutoSelectEnabled(false)
+            .setNonce(nonce)
+            .build()
+        request(act, GetCredentialRequest.Builder().addCredentialOption(sheet).build(), nonce, s, interactive = true) { err ->
+            if (err == null || err.startsWith(CANCELLED)) { done(err); return@request }
+            // Fallback: the full "Sign in with Google" screen (also lets the user add an account)
+            val nonce2 = UUID.randomUUID().toString()
+            val full = GetSignInWithGoogleOption.Builder(Config.WEB_CLIENT_ID).setNonce(nonce2).build()
+            request(act, GetCredentialRequest.Builder().addCredentialOption(full).build(), nonce2, s, interactive = true) { err2 ->
+                done(if (err2 == null) null else if (err2 == err) err2 else "$err2\n(First try: $err)")
+            }
+        }
     }
+
+    private const val CANCELLED = "Sign-in was cancelled"
 
     /** Gets a fresh ID token quietly with the already signed-in account (may show a small Google notice). */
     private fun refresh(act: Activity, s: Store, done: (String?) -> Unit) {
@@ -60,11 +75,14 @@ object Account {
     }
 
     private fun request(act: Activity, request: GetCredentialRequest, nonce: String, s: Store, interactive: Boolean, done: (String?) -> Unit) {
-        val cm = CredentialManager.create(act)
-        cm.getCredentialAsync(act, request, CancellationSignal(), executor,
+        val cm = try { CredentialManager.create(act) } catch (e: Throwable) {
+            ui { done("Google sign-in isn't available on this phone (${e.javaClass.simpleName}). Make sure Google Play services is installed and up to date.") }
+            return
+        }
+        try { cm.getCredentialAsync(act, request, CancellationSignal(), executor,
             object : CredentialManagerCallback<GetCredentialResponse, GetCredentialException> {
                 override fun onResult(result: GetCredentialResponse) {
-                    val err = handle(result, nonce, s)
+                    val err = try { handle(result, nonce, s) } catch (e: Throwable) { "Couldn't finish sign-in: ${e.javaClass.simpleName}: ${e.message}" }
                     if (err == null && interactive) {
                         // register in the sheet (best effort; retried by the daily check-in)
                         try { post("register", s.idToken, emptyMap()); s.registered = true; s.lastPing = Date().toString().take(10) }
@@ -74,15 +92,20 @@ object Account {
                 }
 
                 override fun onError(e: GetCredentialException) {
-                    val msg = when (e) {
-                        is GetCredentialCancellationException -> "Sign-in was cancelled."
-                        is NoCredentialException -> if (interactive) "No Google account found. Add one in your phone's Settings, then try again."
+                    val detail = (e.message ?: "").trim()
+                    val msg = when {
+                        e is GetCredentialCancellationException -> "$CANCELLED."
+                        e is NoCredentialException -> if (interactive) "No Google account found on this phone. Add one in Settings › Accounts, then try again."
                         else "Please sign in again."
-                        else -> "Google sign-in failed: ${e.message ?: e.type}"
+                        detail.contains("28444") || detail.contains("developer console", true) || detail.contains("DEVELOPER_ERROR", true) ->
+                            "Google sign-in isn't set up for this app yet. If you just created the Android client, wait up to an hour and try again. (${e.type})"
+                        else -> "Google sign-in failed: ${detail.ifBlank { e.type }}"
                     }
                     ui { done(msg) }
                 }
-            })
+            }) } catch (e: Throwable) {
+            ui { done("Google sign-in couldn't start: ${e.javaClass.simpleName}: ${e.message}") }
+        }
     }
 
     private fun handle(result: GetCredentialResponse, nonce: String, s: Store): String? {

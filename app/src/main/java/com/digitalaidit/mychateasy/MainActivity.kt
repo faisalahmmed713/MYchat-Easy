@@ -46,6 +46,7 @@ class MainActivity : Activity(), VoiceHost {
         C.init(this)
         s = Store(this)
         Account.appVersion = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
+        CrashReport.install(this)
         tab = intent?.getStringExtra("tab") ?: if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"
 
         val root = vbox(this).apply { setBackgroundColor(C.panel) }
@@ -85,6 +86,7 @@ class MainActivity : Activity(), VoiceHost {
         setContentView(root)
         edgeToEdge(this, root)
         render()
+        CrashReport.showIfAny(this)
     }
 
     override fun onResume() {
