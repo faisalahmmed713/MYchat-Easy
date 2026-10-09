@@ -159,21 +159,35 @@ object Account {
             .put("version", "android-$appVersion")
             .put("browser", "Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}".take(200))
         extra.forEach { (k, v) -> body.put(k, v) }
+        // Apps Script runs the POST, then answers with a redirect to where the result can be read (a GET).
+        // We follow that redirect ourselves, because Android's automatic handling fails on it.
         val c = URL(Config.SCRIPT_URL).openConnection() as HttpURLConnection
+        var location: String? = null
+        var code: Int
+        var txt = ""
         try {
             c.requestMethod = "POST"
             c.connectTimeout = 20000
             c.readTimeout = 30000
-            c.instanceFollowRedirects = true
+            c.instanceFollowRedirects = false
             c.doOutput = true
             c.setRequestProperty("content-type", "text/plain;charset=utf-8")
             c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = c.responseCode
-            val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            val d = try { JSONObject(txt) } catch (e: Exception) { JSONObject() }
-            if (code !in 200..299 || !d.optBoolean("ok")) throw AiException(d.optString("error").ifBlank { "Couldn't reach the MYchat Easy server. Try again later." })
-            return d
+            code = c.responseCode
+            if (code in 300..399) location = c.getHeaderField("Location")
+            else txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
         } finally { c.disconnect() }
+        if (location != null) {
+            val g = URL(URL(Config.SCRIPT_URL), location).openConnection() as HttpURLConnection
+            try {
+                g.connectTimeout = 20000; g.readTimeout = 30000; g.instanceFollowRedirects = true
+                code = g.responseCode
+                txt = (if (code in 200..299) g.inputStream else g.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            } finally { g.disconnect() }
+        }
+        val d = try { JSONObject(txt) } catch (e: Exception) { JSONObject() }
+        if (code !in 200..299 || !d.optBoolean("ok")) throw AiException(d.optString("error").ifBlank { "Couldn't reach the MYchat Easy server. Try again later." })
+        return d
     }
 
     /** Once a day: updates "last seen" and the version in the sheet. Never interrupts the user. */

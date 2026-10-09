@@ -42,7 +42,7 @@ class ToolPanel(
         val head = hbox(act)
         head.add(label(act, if (initialText.isNotBlank()) "SELECTED TEXT" else "YOUR TEXT"))
         head.addView(spacer(act))
-        head.add(link(act, "Paste") {
+        head.add(iconBtn("📋", "Paste") {
             val t = pasteText(act)
             if (t.isNullOrBlank()) toast(act, "Clipboard is empty") else {
                 val cur = input.text.toString()
@@ -50,24 +50,30 @@ class ToolPanel(
                 input.setSelection(input.text.length)
             }
         }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
-        head.add(link(act, "Clear") { input.setText("") }, 2, ViewGroup.LayoutParams.WRAP_CONTENT)
+        head.add(iconBtn("✕", "Clear") { input.setText("") }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
         inCard.add(head)
         input.setText(initialText)
         inCard.add(input, 8)
 
         val micRow = hbox(act)
-        val mic = text(act, "🎤  Speak", 14f, Color.WHITE, true).apply {
+        val micLang = text(act, "Speak in ${s.voiceLang} ▾", 13f, C.muted, true).apply {
+            setPadding(act.dp(4), act.dp(8), act.dp(8), act.dp(8))
+            isClickable = true
+            setOnClickListener { pickVoiceLang() }
+        }
+        micLang.tag = "micLang"
+        micRow.add(micLang, 0, 0, 1f)
+        val mic = text(act, "🎤", 18f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             background = ripple(gradient(act, 99), 0x33FFFFFF)
-            setPadding(act.dp(16), act.dp(9), act.dp(16), act.dp(9))
+            elevation = act.dp(2).toFloat()
             isClickable = true
+            contentDescription = "Speak"
             setOnClickListener { listen() }
+            setOnLongClickListener { pickVoiceLang(); true }
         }
-        micRow.add(mic, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
-        val micLang = link(act, "in ${s.voiceLang} ▾") { pickVoiceLang() }
-        micLang.tag = "micLang"
-        micRow.add(micLang, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
-        inCard.add(micRow, 10)
+        micRow.addView(mic, LinearLayout.LayoutParams(act.dp(44), act.dp(44)))
+        inCard.add(micRow, 6)
         view.add(inCard)
 
         // ----- mode tabs -----
@@ -80,7 +86,7 @@ class ToolPanel(
         // ----- loading + result -----
         val pb = ProgressBar(act).apply { isIndeterminate = true }
         loading.addView(pb, LinearLayout.LayoutParams(act.dp(22), act.dp(22)))
-        loading.add(text(act, "Working…", 14f, C.muted), 10, ViewGroup.LayoutParams.WRAP_CONTENT)
+        loading.add(text(act, "Working…", 14f, C.muted).apply { tag = "loadingText" }, 10, ViewGroup.LayoutParams.WRAP_CONTENT)
         loading.visibility = View.GONE
         view.add(loading, 16)
         result.visibility = View.GONE
@@ -130,7 +136,7 @@ class ToolPanel(
             .setTitle("I'll speak in")
             .setSingleChoiceItems(all.toTypedArray(), all.indexOf(s.voiceLang)) { d, which ->
                 s.voiceLang = all[which]
-                (view.findViewWithTag<TextView>("micLang"))?.text = "in ${s.voiceLang} ▾"
+                (view.findViewWithTag<TextView>("micLang"))?.text = "Speak in ${s.voiceLang} ▾"
                 d.dismiss()
             }
             .show()
@@ -157,22 +163,19 @@ class ToolPanel(
         val langs = s.languages
         when (mode) {
             "tr" -> {
-                options.add(text(act, "Tap a language to translate", 13f, C.muted))
-                val f = flow(act)
+                options.add(text(act, "Translate to", 13f, C.muted, true))
                 val (a, b) = s.autoPair
-                f.addView(chip(act, "Auto ($a ⇄ $b)", false) { run(Task("translate", target = "auto"), "Translation", null) })
+                val chips = mutableListOf(chip(act, "Auto  $a ⇄ $b", false) { run(Task("translate", target = "auto"), "Translation", null) })
                 langs.forEach { l ->
                     // if the text is already in this language, translate it into the other language of the Auto pair
                     val other = if (l == a) b else a
-                    f.addView(chip(act, l, false) { run(Task("translate", target = l, fallback = other), "Translation · $l", l) })
+                    chips.add(chip(act, l, false) { run(Task("translate", target = l, fallback = other), "Translation · $l", l) })
                 }
-                options.add(f, 8)
+                options.add(chipRow(chips), 8)
             }
             "rw" -> {
-                options.add(text(act, "Keeps your language. Choose how to rewrite:", 13f, C.muted))
-                val f = flow(act)
-                Config.REWRITES.forEach { (id, name) -> f.addView(chip(act, name, false) { run(Task("rewrite", action = id), "Rewrite · $name", null) }) }
-                options.add(f, 8)
+                options.add(text(act, "Rewrite (keeps your language)", 13f, C.muted, true))
+                options.add(chipRow(Config.REWRITES.map { (id, name) -> chip(act, name, false) { run(Task("rewrite", action = id), "Rewrite · $name", null) } }), 8)
             }
             "wr" -> {
                 options.add(text(act, "Type your idea above (any language), then choose:", 13f, C.muted))
@@ -231,6 +234,9 @@ class ToolPanel(
         hideKeyboard(input)
         val task = t.copy(text = txt)
         result.visibility = View.GONE
+        loading.findViewWithTag<TextView>("loadingText")?.text = when (t.type) {
+            "translate" -> "Translating…"; "rewrite" -> "Rewriting…"; "write" -> "Writing…"; "reply" -> "Thinking of replies…"; else -> "Working…"
+        }
         loading.visibility = View.VISIBLE
         onResultShown(loading)
         bg {
@@ -248,11 +254,44 @@ class ToolPanel(
 
     private fun actionsRow(): FlowLayout = flow(act)
 
+    /** A round, quiet icon button (Paste, Clear, Copy…). */
+    private fun iconBtn(icon: String, desc: String, onClick: () -> Unit): TextView = text(act, icon, 15f, C.ink).apply {
+        gravity = Gravity.CENTER
+        background = ripple(rounded(act, C.soft, 99, C.line))
+        minWidth = act.dp(38); minHeight = act.dp(38)
+        setPadding(act.dp(8), act.dp(6), act.dp(8), act.dp(6))
+        contentDescription = desc
+        isClickable = true
+        setOnClickListener { onClick() }
+    }
+
+    /** Icon above a short label, used in the result's action row. */
+    private fun actionTile(icon: String, name: String, onClick: () -> Unit): LinearLayout = vbox(act).apply {
+        gravity = Gravity.CENTER
+        setPadding(0, act.dp(8), 0, act.dp(8))
+        background = ripple(rounded(act, android.graphics.Color.TRANSPARENT, 12))
+        isClickable = true
+        contentDescription = name
+        setOnClickListener { onClick() }
+        addView(text(act, icon, 18f, C.brand).apply { gravity = Gravity.CENTER })
+        addView(text(act, name, 11.5f, C.muted, true).apply { gravity = Gravity.CENTER })
+    }
+
+    /** Chips in one line that scroll sideways, so the panel stays short and tidy. */
+    private fun chipRow(chips: List<View>): View {
+        val sc = android.widget.HorizontalScrollView(act).apply { isHorizontalScrollBarEnabled = false; clipToPadding = false }
+        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+        chips.forEachIndexed { i, v -> row.addView(v, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { if (i > 0) leftMargin = act.dp(8) }) }
+        sc.addView(row)
+        return sc
+    }
+
     private fun showResult(r: AiResult, title: String, speakLang: String?, retry: () -> Unit) {
         loading.visibility = View.GONE
         result.removeAllViews()
         result.add(label(act, title.uppercase()))
-        val meta = "${r.providerLabel} · ${r.inTok + r.outTok} tokens" + (r.cost?.let { " · $it" } ?: "")
+        val secs = String.format(java.util.Locale.US, "%.1f s", r.ms / 1000.0)
+        val meta = "${r.providerLabel} · $secs · ${r.inTok + r.outTok} tokens" + (r.cost?.let { " · $it" } ?: "")
 
         if (r.replies.isNotEmpty()) {
             r.replies.forEach { reply ->
@@ -261,12 +300,13 @@ class ToolPanel(
                     setPadding(act.dp(12), act.dp(10), act.dp(12), act.dp(10))
                 }
                 box.add(text(act, reply, 15.5f).apply { setTextIsSelectable(true) })
-                val row = actionsRow()
-                if (onReplace != null) row.addView(primary(act, "Use") { onReplace.invoke(reply) })
-                row.addView(ghost(act, "Copy") { copyText(act, reply) })
-                row.addView(ghost(act, "Share") { shareText(act, reply) })
-                row.addView(ghost(act, "Listen") { Speaker.speak(act, reply, speakLang) })
-                box.add(row, 8)
+                val row = hbox(act)
+                if (onReplace != null) row.add(primary(act, "Use") { onReplace.invoke(reply) }.apply { setPadding(act.dp(18), act.dp(8), act.dp(18), act.dp(8)) }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
+                row.addView(spacer(act))
+                row.add(iconBtn("⧉", "Copy") { copyText(act, reply) }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
+                row.add(iconBtn("↗", "Share") { shareText(act, reply) }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
+                row.add(iconBtn("🔊", "Listen") { Speaker.speak(act, reply, speakLang) }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
+                box.add(row, 10)
                 result.add(box, 10)
             }
             result.add(text(act, meta, 12f, C.muted), 8)
@@ -274,16 +314,18 @@ class ToolPanel(
             more.addView(ghost(act, "New ideas") { retry() })
             result.add(more, 8)
         } else {
-            result.add(text(act, r.text, 16.5f).apply { setTextIsSelectable(true) }, 8)
-            result.add(text(act, meta, 12f, C.muted), 8)
-            val row = actionsRow()
-            if (onReplace != null) row.addView(primary(act, "Replace") { onReplace.invoke(r.text) })
-            row.addView(ghost(act, "Copy") { copyText(act, r.text) })
-            row.addView(ghost(act, "Share") { shareText(act, r.text) })
-            row.addView(ghost(act, "Listen") { Speaker.speak(act, r.text, speakLang) })
-            row.addView(ghost(act, "Try again") { retry() })
-            row.addView(ghost(act, "Edit this") { input.setText(r.text); input.setSelection(input.text.length); input.requestFocus() })
-            result.add(row, 12)
+            result.add(text(act, r.text, 17f).apply { setTextIsSelectable(true); setLineSpacing(0f, 1.25f) }, 8)
+            result.add(text(act, meta, 12f, C.muted), 10)
+            if (onReplace != null) result.add(primary(act, "✓  Replace") { onReplace.invoke(r.text) }, 14)
+            val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+            listOf<Triple<String, String, () -> Unit>>(
+                Triple("⧉", "Copy") { copyText(act, r.text) },
+                Triple("↗", "Share") { shareText(act, r.text) },
+                Triple("🔊", "Listen") { Speaker.speak(act, r.text, speakLang) },
+                Triple("↻", "Retry") { retry() },
+                Triple("✎", "Edit") { input.setText(r.text); input.setSelection(input.text.length); input.requestFocus(); Unit }
+            ).forEach { (icon, name, fn) -> row.addView(actionTile(icon, name, fn), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)) }
+            result.add(row, 10)
         }
         result.visibility = View.VISIBLE
         renderAi()

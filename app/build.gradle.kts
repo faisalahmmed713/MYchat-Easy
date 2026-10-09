@@ -11,8 +11,8 @@ android {
         applicationId = "com.digitalaidit.mychateasy"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.3.0"
+        versionCode = 9
+        versionName = "1.4.0"
     }
 
     // A fixed debug key, so each new APK installs over the previous one without uninstalling

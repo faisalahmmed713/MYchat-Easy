@@ -22,6 +22,7 @@ data class Task(
 )
 
 class AiResult(
+    val ms: Long,
     val text: String,
     val replies: List<String>,
     val inTok: Int,
@@ -186,6 +187,10 @@ object Ai {
             "POST", mapOf("content-type" to "application/json"), body.toString()
         )
         var res = go(model)
+        if (res.first == 400 && body.has("generationConfig") && Regex("thinking", RegexOption.IGNORE_CASE).containsMatchIn(errorText(res.second))) {
+            body.remove("generationConfig")   // this model doesn't take the thinking setting: try again without it
+            res = go(model)
+        }
         if (res.first !in 200..299) {
             val hit = Regex("use\\s+(?:models/)?(gemini-[\\w.\\-]+)", RegexOption.IGNORE_CASE).find(errorText(res.second))
             if (hit != null && hit.groupValues[1] != model) {
@@ -206,6 +211,9 @@ object Ai {
                 val body = JSONObject()
                     .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                     .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text)))))
+                // Faster answers: these tasks don't need the model to "think" first
+                if (Regex("flash", RegexOption.IGNORE_CASE).containsMatchIn(model))
+                    body.put("generationConfig", JSONObject().put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
                 val (d, used) = geminiCall(s, model, body)
                 val cand = d.optJSONArray("candidates")?.optJSONObject(0)
                 val parts = cand?.optJSONObject("content")?.optJSONArray("parts")
@@ -245,9 +253,14 @@ object Ai {
                 val body = JSONObject().put("model", model).put("messages", JSONArray()
                     .put(JSONObject().put("role", "system").put("content", system))
                     .put(JSONObject().put("role", "user").put("content", text)))
-                val r = http("$base/chat/completions", "POST", mapOf(
-                    "content-type" to "application/json", "authorization" to "Bearer ${s.key(p)}"
-                ), body.toString())
+                // Reasoning models think before answering; keep that short so answers come back fast
+                if (Regex("gpt-oss|^o\\d|^gpt-5|deepseek-r1|qwq", RegexOption.IGNORE_CASE).containsMatchIn(model)) body.put("reasoning_effort", "low")
+                val headers = mapOf("content-type" to "application/json", "authorization" to "Bearer ${s.key(p)}")
+                var r = http("$base/chat/completions", "POST", headers, body.toString())
+                if (r.first == 400 && body.has("reasoning_effort") && Regex("reasoning", RegexOption.IGNORE_CASE).containsMatchIn(errorText(r.second))) {
+                    body.remove("reasoning_effort")   // this model doesn't take the setting: try again without it
+                    r = http("$base/chat/completions", "POST", headers, body.toString())
+                }
                 if (r.first !in 200..299) fail(r.first, r.second, who)
                 val d = JSONObject(r.second)
                 val out = d.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content") ?: ""
@@ -280,6 +293,7 @@ object Ai {
             "reply" -> replyPrompt(t.lang, s) to "Reply ideas"
             else -> translatePrompt(t.target, s, t.fallback) to "Translate · ${if (t.target == "auto") "Auto" else t.target}"
         }
+        val started = System.currentTimeMillis()
         val raw = try {
             callAI(s, p, system, t.text)
         } catch (e: AiException) {
@@ -306,7 +320,7 @@ object Ai {
             0.0 -> "free"
             else -> s.formatCost(usd)
         }
-        return AiResult(out, replies, raw.inTok, raw.outTok, Config.provider(p).label, cost)
+        return AiResult(System.currentTimeMillis() - started, out, replies, raw.inTok, raw.outTok, Config.provider(p).label, cost)
     }
 
     /** Loads the latest model ids from the provider. Call from a background thread. */
