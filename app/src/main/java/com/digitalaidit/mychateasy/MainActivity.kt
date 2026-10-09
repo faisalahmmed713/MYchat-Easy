@@ -260,10 +260,15 @@ class MainActivity : Activity(), VoiceHost {
         gbtn.setOnClickListener {
             status.text = "Opening Google sign-in…"; status.setTextColor(0xFF9AA6D8.toInt())
             gbtn.isEnabled = false
-            Account.signIn(this, s) { err ->
+            try {
+                Account.signIn(this, s) { err ->
+                    gbtn.isEnabled = true
+                    if (err == null) { toast(this, "Signed in as ${s.accountEmail}"); tab = if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"; render() }
+                    else { status.text = err; status.setTextColor(0xFFFF8A96.toInt()) }
+                }
+            } catch (e: Throwable) {
                 gbtn.isEnabled = true
-                if (err == null) { toast(this, "Signed in as ${s.accountEmail}"); tab = if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"; render() }
-                else { status.text = err; status.setTextColor(0xFFFF8A96.toInt()) }
+                status.text = "Google sign-in couldn't start: ${e.javaClass.simpleName}"; status.setTextColor(0xFFFF8A96.toInt())
             }
         }
         body.add(gbtn)

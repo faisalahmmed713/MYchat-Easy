@@ -11,8 +11,8 @@ android {
         applicationId = "com.digitalaidit.mychateasy"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 5
+        versionName = "1.2.2"
     }
 
     // A fixed debug key, so each new APK installs over the previous one without uninstalling
@@ -49,4 +49,7 @@ dependencies {
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    // credentials-play-services-auth needs these at runtime but doesn't bring them itself
+    implementation("androidx.activity:activity:1.9.3")
+    implementation("androidx.core:core:1.13.1")
 }
