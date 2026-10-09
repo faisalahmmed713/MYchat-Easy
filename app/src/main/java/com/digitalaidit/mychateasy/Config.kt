@@ -12,6 +12,13 @@ class Provider(
 )
 
 object Config {
+    // Google sign-in and the users / feedback / promo sheet (same as the Chrome extension).
+    // WEB_CLIENT_ID is the Web application OAuth client; Google also needs an Android client
+    // for package com.digitalaidit.mychateasy with this app's signing SHA-1 in the same project.
+    const val WEB_CLIENT_ID = "706538068827-k4cvtbnt61vd9s85561hiiqm9maf2us8.apps.googleusercontent.com"
+    const val SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx3xZL313s_KLJoStG6pBVLNNMSSeUusXV1q8HCVMLjbBo4IMKx17IFe5vkRSv1NVSH/exec"
+    fun accountRequired() = WEB_CLIENT_ID.isNotBlank()
+
     val ORDER = listOf("gemini", "groq", "claude", "openai", "custom")
 
     val PROVIDERS: Map<String, Provider> = mapOf(

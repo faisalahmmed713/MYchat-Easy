@@ -78,6 +78,43 @@ class Store(ctx: Context) {
         get() = str("tone", "natural")
         set(v) = put("tone", v)
 
+    // ---------- Google account ----------
+    var signedIn: Boolean
+        get() = sp.getBoolean("signedIn", false)
+        set(v) = sp.edit().putBoolean("signedIn", v).apply()
+    var accountEmail: String
+        get() = str("accountEmail")
+        set(v) = put("accountEmail", v)
+    var accountName: String
+        get() = str("accountName")
+        set(v) = put("accountName", v)
+    // The last Google ID token and when it expires (ms), so we don't ask Google every time
+    var idToken: String
+        get() = str("idToken")
+        set(v) = put("idToken", v)
+    var idTokenExp: Long
+        get() = sp.getLong("idTokenExp", 0L)
+        set(v) = sp.edit().putLong("idTokenExp", v).apply()
+    var registered: Boolean
+        get() = sp.getBoolean("registered", false)
+        set(v) = sp.edit().putBoolean("registered", v).apply()
+    var lastPing: String
+        get() = str("lastPing")
+        set(v) = put("lastPing", v)
+
+    fun signOut() {
+        sp.edit().putBoolean("signedIn", false).remove("accountEmail").remove("accountName")
+            .remove("idToken").remove("idTokenExp").remove("registered").remove("lastPing").apply()
+    }
+
+    // ---------- promo (from the sheet) ----------
+    var promoJson: String
+        get() = str("promoJson")
+        set(v) = put("promoJson", v)
+    var promoAt: Long
+        get() = sp.getLong("promoAt", 0L)
+        set(v) = sp.edit().putLong("promoAt", v).apply()
+
     // ---------- floating bubble ----------
     var bubbleOn: Boolean
         get() = sp.getBoolean("bubbleOn", true)

@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.speech.RecognizerIntent
@@ -34,6 +35,9 @@ class MainActivity : Activity(), VoiceHost {
     private lateinit var content: LinearLayout
     private lateinit var nav: LinearLayout
     private lateinit var activeLine: TextView
+    private lateinit var header: LinearLayout
+    private lateinit var signinBox: LinearLayout
+    private var promoClosed = false     // ✕ hides the promo until the app is opened again
     private var tab = "home"
     private var voiceCb: ((String) -> Unit)? = null
 
@@ -41,12 +45,13 @@ class MainActivity : Activity(), VoiceHost {
         super.onCreate(savedInstanceState)
         C.init(this)
         s = Store(this)
+        Account.appVersion = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
         tab = intent?.getStringExtra("tab") ?: if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"
 
         val root = vbox(this).apply { setBackgroundColor(C.panel) }
 
         // header
-        val header = hbox(this).apply { setPadding(dp(18), dp(12), dp(18), dp(12)) }
+        header = hbox(this).apply { setPadding(dp(18), dp(12), dp(18), dp(12)) }
         val logo = ImageView(this).apply { setImageResource(applicationInfo.icon) }
         header.addView(logo, LinearLayout.LayoutParams(dp(40), dp(40)))
         val titles = vbox(this)
@@ -54,6 +59,13 @@ class MainActivity : Activity(), VoiceHost {
         activeLine = text(this, "", 12.5f, C.muted)
         titles.add(activeLine, 1)
         header.add(titles, 12, 0, 1f)
+        val fb = text(this, "💬 Feedback", 12.5f, C.brand, true).apply {
+            background = ripple(rounded(this@MainActivity, C.hover, 10))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            isClickable = true
+            setOnClickListener { tab = "more"; render() }
+        }
+        header.add(fb, 8, ViewGroup.LayoutParams.WRAP_CONTENT)
         root.add(header)
 
         scroll = ScrollView(this).apply { setBackgroundColor(C.bg); isFillViewport = true }
@@ -68,6 +80,8 @@ class MainActivity : Activity(), VoiceHost {
         }
         root.add(nav)
 
+        signinBox = vbox(this).apply { visibility = View.GONE; setBackgroundColor(0xFF0D1433.toInt()) }
+        root.addView(signinBox, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
         edgeToEdge(this, root)
         render()
@@ -75,6 +89,7 @@ class MainActivity : Activity(), VoiceHost {
 
     override fun onResume() {
         super.onResume()
+        if (::content.isInitialized && Account.signedIn(s)) Account.dailyCheckIn(this, s)
         if (::content.isInitialized && (tab == "home" || tab == "more")) render()
     }
 
@@ -171,6 +186,12 @@ class MainActivity : Activity(), VoiceHost {
 
     // ---------- layout ----------
     private fun render() {
+        val needs = !Account.signedIn(s)
+        header.visibility = if (needs) View.GONE else View.VISIBLE
+        scroll.visibility = if (needs) View.GONE else View.VISIBLE
+        nav.visibility = if (needs) View.GONE else View.VISIBLE
+        signinBox.visibility = if (needs) View.VISIBLE else View.GONE
+        if (needs) { renderSignin(); return }
         val p = s.provider
         activeLine.text = "${Config.provider(p).label} · ${s.model(p)}"
         renderNav()
@@ -203,8 +224,157 @@ class MainActivity : Activity(), VoiceHost {
 
     private fun section(title: String) = content.add(label(this, title.uppercase()), 18)
 
+    // ---------- sign-in screen ----------
+    private fun renderSignin() {
+        signinBox.removeAllViews()
+        val head = hbox(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(C.G1, C.G2))
+            setPadding(dp(22), dp(36), dp(22), dp(28))
+        }
+        val logoBox = android.widget.FrameLayout(this).apply { background = rounded(this@MainActivity, 0x29FFFFFF, 16) }
+        val logo = ImageView(this).apply { setImageResource(applicationInfo.icon) }
+        logoBox.addView(logo, android.widget.FrameLayout.LayoutParams(dp(46), dp(46)).apply { setMargins(dp(6), dp(6), dp(6), dp(6)) })
+        head.addView(logoBox)
+        val t = vbox(this)
+        t.add(text(this, "MYchat Easy", 22f, Color.WHITE, true))
+        t.add(text(this, "Translate, rewrite & write in any app", 13.5f, 0xD9FFFFFF.toInt()), 2)
+        head.add(t, 14, 0, 1f)
+        signinBox.add(head)
+
+        val body = vbox(this).apply { setPadding(dp(22), dp(28), dp(22), dp(22)); gravity = Gravity.CENTER_HORIZONTAL }
+        val status = text(this, "Sign in to use all MYchat Easy features", 13f, 0xFF9AA6D8.toInt()).apply { gravity = Gravity.CENTER }
+        val gbtn = hbox(this).apply {
+            gravity = Gravity.CENTER
+            background = ripple(GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2448E6.toInt(), 0xFF6A3BE8.toInt())).apply { cornerRadius = dp(14).toFloat() }, 0x33FFFFFF)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            isClickable = true
+        }
+        val g = text(this, "G", 15f, 0xFF4285F4.toInt(), true).apply {
+            gravity = Gravity.CENTER
+            background = rounded(this@MainActivity, Color.WHITE, 99)
+        }
+        gbtn.addView(g, LinearLayout.LayoutParams(dp(28), dp(28)))
+        gbtn.add(text(this, "Sign in with Google", 16f, Color.WHITE, true), 12, ViewGroup.LayoutParams.WRAP_CONTENT)
+        gbtn.setOnClickListener {
+            status.text = "Opening Google sign-in…"; status.setTextColor(0xFF9AA6D8.toInt())
+            gbtn.isEnabled = false
+            Account.signIn(this, s) { err ->
+                gbtn.isEnabled = true
+                if (err == null) { toast(this, "Signed in as ${s.accountEmail}"); tab = if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"; render() }
+                else { status.text = err; status.setTextColor(0xFFFF8A96.toInt()) }
+            }
+        }
+        body.add(gbtn)
+        body.add(status, 14)
+        body.add(text(this, "We never see your password. Your text and API keys stay on your phone.", 12f, 0xFF7380B4.toInt()).apply { gravity = Gravity.CENTER }, 18)
+        body.add(link(this, "Privacy policy") { openUrl("https://digitalaidit.com/mychat-easy-privacy") }.apply { setTextColor(0xFFB9C3FF.toInt()); gravity = Gravity.CENTER }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
+        signinBox.add(body)
+    }
+
+    // ---------- promo (from the sheet) ----------
+    private fun promoCard(): View {
+        val holder = vbox(this)
+        fun fill(p: Promo?) {
+            holder.removeAllViews()
+            if (p == null || promoClosed) { holder.visibility = View.GONE; return }
+            holder.visibility = View.VISIBLE
+            val c = hbox(this).apply {
+                gravity = Gravity.TOP
+                background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(if (C.dark) 0xFF1E2448.toInt() else 0xFFE9EDFF.toInt(), if (C.dark) 0xFF2A1F4A.toInt() else 0xFFF1E9FF.toInt())).apply {
+                    cornerRadius = dp(16).toFloat(); setStroke(dp(1), C.line)
+                }
+                setPadding(dp(12), dp(12), dp(8), dp(12))
+            }
+            val img = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; visibility = View.GONE; clipToOutline = true; background = rounded(this@MainActivity, C.soft, 12) }
+            c.addView(img, LinearLayout.LayoutParams(dp(64), dp(64)).apply { rightMargin = dp(12) })
+            if (p.image.isNotBlank()) bg {
+                val bmp = try {
+                    val conn = java.net.URL(p.image).openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 10000; conn.readTimeout = 10000
+                    conn.inputStream.use { stream -> android.graphics.BitmapFactory.decodeStream(java.io.BufferedInputStream(stream, 2 * 1024 * 1024)) }
+                } catch (e: Exception) { null }
+                if (bmp != null) ui { img.setImageBitmap(bmp); img.visibility = View.VISIBLE }
+            }
+            val t = vbox(this)
+            if (p.title.isNotBlank()) t.add(text(this, p.title, 15f, C.ink, true))
+            if (p.text.isNotBlank()) t.add(text(this, p.text, 13f, C.muted), 3)
+            if (p.link.isNotBlank()) {
+                val b = primary(this, p.button) {
+                    Account.promoClick(this, s, p)
+                    openUrl(p.link)
+                }.apply { setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f); setPadding(dp(12), dp(6), dp(12), dp(6)) }
+                t.add(b, 8, ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+            c.add(t, 0, 0, 1f)
+            c.add(link(this, "✕") { promoClosed = true; holder.visibility = View.GONE }.apply { setTextColor(C.muted) }, 4, ViewGroup.LayoutParams.WRAP_CONTENT)
+            holder.add(c)
+        }
+        fill(Account.cachedPromo(s))
+        bg { val fresh = Account.refreshPromo(s); ui { if (!isFinishing) fill(fresh) } }
+        return holder
+    }
+
+    // ---------- account & feedback ----------
+    private fun accountAndFeedback() {
+        if (!Config.accountRequired()) return
+        section("Account")
+        val a = card(this)
+        val row = hbox(this)
+        val initial = text(this, (s.accountName.ifBlank { s.accountEmail }).trim().take(1).uppercase(), 16f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(C.G1, C.G2)).apply { shape = GradientDrawable.OVAL }
+        }
+        row.addView(initial, LinearLayout.LayoutParams(dp(40), dp(40)))
+        val who = vbox(this)
+        who.add(text(this, s.accountName.ifBlank { "Signed in" }, 15f, C.ink, true))
+        who.add(text(this, s.accountEmail, 13f, C.muted))
+        row.add(who, 12, 0, 1f)
+        row.add(link(this, "Sign out") {
+            AlertDialog.Builder(this).setMessage("Sign out of MYchat Easy?")
+                .setPositiveButton("Sign out") { _, _ -> Account.signOut(this, s); render() }
+                .setNegativeButton("Cancel", null).show()
+        }.apply { setTextColor(C.err) }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
+        a.add(row)
+        content.add(a, 8)
+
+        section("Send feedback")
+        val f = card(this)
+        var rating = 0
+        val stars = hbox(this)
+        val starViews = (1..5).map { i ->
+            text(this, "★", 30f, C.line).apply {
+                setPadding(dp(2), 0, dp(4), 0)
+                isClickable = true
+                contentDescription = "$i star${if (i > 1) "s" else ""}"
+            }
+        }
+        fun paint() { starViews.forEachIndexed { i, v -> v.setTextColor(if (i < rating) 0xFFF5B301.toInt() else C.line) } }
+        starViews.forEachIndexed { i, v -> v.setOnClickListener { rating = i + 1; paint() }; stars.add(v, 0, ViewGroup.LayoutParams.WRAP_CONTENT) }
+        f.add(stars)
+        val msg = input(this, "What do you like? What should we improve?", multi = true)
+        f.add(msg, 8)
+        val status = text(this, "", 13f, C.muted)
+        val send = primary(this, "Send feedback") { }
+        send.setOnClickListener {
+            status.text = "Sending…"; status.setTextColor(C.muted); send.isEnabled = false
+            Account.sendFeedback(this, s, rating, msg.text.toString()) { err ->
+                if (err == null) {
+                    msg.setText(""); rating = 0; paint()
+                    status.text = "Thank you! Your feedback was sent."; status.setTextColor(C.ok)
+                    send.postDelayed({ send.isEnabled = true }, 30000)   // avoid accidental double sends
+                } else { status.text = err; status.setTextColor(C.err); send.isEnabled = true }
+            }
+        }
+        f.add(send, 12, ViewGroup.LayoutParams.WRAP_CONTENT)
+        f.add(status, 8)
+        f.add(text(this, "Sent with your Google email so Digital Aid IT can reply.", 12f, C.muted), 4)
+        content.add(f, 8)
+    }
+
     // ---------- Home ----------
     private fun renderHome() {
+        content.add(promoCard())
         val tip = vbox(this).apply {
             background = gradient(this@MainActivity, 16)
             setPadding(dp(16), dp(14), dp(16), dp(14))
@@ -462,6 +632,7 @@ class MainActivity : Activity(), VoiceHost {
 
     // ---------- More ----------
     private fun renderMore() {
+        accountAndFeedback()
         section("Floating bubble")
         content.add(bubbleCard(), 8)
         val hidden = s.bubbleHidden

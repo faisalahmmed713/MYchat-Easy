@@ -161,7 +161,11 @@ class ToolPanel(
                 val f = flow(act)
                 val (a, b) = s.autoPair
                 f.addView(chip(act, "Auto ($a ⇄ $b)", false) { run(Task("translate", target = "auto"), "Translation", null) })
-                langs.forEach { l -> f.addView(chip(act, l, false) { run(Task("translate", target = l), "Translation · $l", l) }) }
+                langs.forEach { l ->
+                    // if the text is already in this language, translate it into the other language of the Auto pair
+                    val other = if (l == a) b else a
+                    f.addView(chip(act, l, false) { run(Task("translate", target = l, fallback = other), "Translation · $l", l) })
+                }
                 options.add(f, 8)
             }
             "rw" -> {
@@ -233,6 +237,8 @@ class ToolPanel(
             try {
                 val r = Ai.run(s, task)
                 ui { if (!act.isFinishing) showResult(r, title, speakLang) { run(t, title, speakLang) } }
+            } catch (e: SigninRequired) {
+                ui { if (!act.isFinishing) showSignin { run(t, title, speakLang) } }
             } catch (e: Exception) {
                 val msg = e.message ?: "Something went wrong."
                 ui { if (!act.isFinishing) showError(msg) { run(t, title, speakLang) } }
@@ -281,6 +287,24 @@ class ToolPanel(
         }
         result.visibility = View.VISIBLE
         renderAi()
+        onResultShown(result)
+    }
+
+    private fun showSignin(retry: () -> Unit) {
+        loading.visibility = View.GONE
+        result.removeAllViews()
+        result.add(text(act, "Sign in required", 16f, C.ink, true))
+        result.add(text(act, "Sign in with your Google account to use MYchat Easy. You only do it once.", 14f, C.muted), 4)
+        val status = text(act, "", 13f, C.err)
+        result.add(primary(act, "Sign in with Google") {
+            status.text = "Opening Google sign-in…"; status.setTextColor(C.muted)
+            Account.signIn(act, s) { err ->
+                if (err == null) { toast(act, "Signed in as ${s.accountEmail}"); retry() }
+                else { status.text = err; status.setTextColor(C.err) }
+            }
+        }, 12)
+        result.add(status, 8)
+        result.visibility = View.VISIBLE
         onResultShown(result)
     }
 

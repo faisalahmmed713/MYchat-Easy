@@ -23,6 +23,7 @@ class ProcessTextActivity : Activity(), VoiceHost {
         super.onCreate(savedInstanceState)
         C.init(this)
         val s = Store(this)
+        Account.appVersion = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
 
         val action = intent?.action
         val fromBubble = action == ACTION_BUBBLE
