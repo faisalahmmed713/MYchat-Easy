@@ -44,11 +44,50 @@ class BubbleService : AccessibilityService() {
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         store = Store(this)
         C.init(this)
+        handler.post(check)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (!::store.isInitialized) return
+        // Fast path: when a text box is tapped, focused or typed in, show the bubble right away for that box
+        if (event != null && store.bubbleOn) {
+            val t = event.eventType
+            if (t == AccessibilityEvent.TYPE_VIEW_FOCUSED || t == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+                t == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED || t == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED) {
+                val src = try { event.source } catch (e: Exception) { null }
+                if (src != null && usable(src)) { showFor(src); handler.removeCallbacks(check); return }
+            }
+        }
         handler.removeCallbacks(check)
-        handler.postDelayed(check, 120)
+        handler.postDelayed(check, 80)
+    }
+
+    private fun usable(n: AccessibilityNodeInfo): Boolean {
+        if (!n.isEditable || n.isPassword) return false
+        val pkg = n.packageName?.toString() ?: return false
+        return pkg != packageName && pkg !in store.bubbleHidden
+    }
+
+    private fun showFor(node: AccessibilityNodeInfo): Boolean {
+        val r = Rect()
+        node.getBoundsInScreen(r)
+        if (r.width() < dp(80) || r.height() <= 0) return false
+        target = node
+        targetPkg = node.packageName?.toString() ?: ""
+        show(r)
+        return true
+    }
+
+    // Finds the focused text box in the active window, or in any window on screen (some apps need this)
+    private fun findFocusedInput(): AccessibilityNodeInfo? {
+        try { rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { if (it.isEditable) return it } } catch (_: Exception) { }
+        try {
+            for (w in windows) {
+                if (w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) continue
+                w.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { if (it.isEditable) return it }
+            }
+        } catch (_: Exception) { }
+        return null
     }
 
     override fun onInterrupt() {}
@@ -67,19 +106,17 @@ class BubbleService : AccessibilityService() {
 
     // ---------- tracking the focused text box ----------
     private fun refresh() {
+        if (!::store.isInitialized) return
         if (!store.bubbleOn) { hide(); return }
-        val root = try { rootInActiveWindow } catch (e: Exception) { null }
-        val node = try { root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) } catch (e: Exception) { null }
-        val pkg = node?.packageName?.toString() ?: root?.packageName?.toString() ?: ""
-        if (node == null || !node.isEditable || node.isPassword || pkg == packageName || pkg in store.bubbleHidden) {
-            hide(); return
+        val node = findFocusedInput()
+        if (node != null && usable(node) && showFor(node)) return
+        // Some apps don't report focus reliably: keep the bubble while the last text box is still focused on screen
+        val last = target
+        if (node == null && last != null && bubble != null) {
+            val still = try { last.refresh() && last.isFocused && last.isVisibleToUser } catch (e: Exception) { false }
+            if (still && showFor(last)) return
         }
-        val r = Rect()
-        node.getBoundsInScreen(r)
-        if (r.width() < dp(80) || r.height() <= 0) { hide(); return }
-        target = node
-        targetPkg = pkg
-        show(r)
+        hide()
     }
 
     private fun makeBubble(): View {

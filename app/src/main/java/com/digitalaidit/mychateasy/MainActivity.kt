@@ -128,6 +128,40 @@ class MainActivity : Activity(), VoiceHost {
         return c
     }
 
+    // ---------- keeping the bubble running ----------
+    private fun ignoringBattery(): Boolean = try {
+        (getSystemService(POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(packageName)
+    } catch (e: Exception) { true }
+
+    private fun batteryCard(): LinearLayout {
+        val c = card(this)
+        c.add(text(this, "Keep the bubble always ready", 15.5f, C.ink, true))
+        c.add(text(this, "Your phone may stop the bubble to save battery. Allow MYchat Easy to run in the background so the bubble appears instantly in every chat. " +
+            "On vivo also turn on Settings › Battery › Background power consumption › MYchat Easy › Allow, and lock MYchat Easy in Recent apps.", 13.5f, C.muted), 6)
+        val row = flow(this)
+        row.addView(primary(this, "Allow background activity") {
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+            } catch (e: Exception) { openAppInfo() }
+        })
+        row.addView(ghost(this, "App settings") { openAppInfo() })
+        c.add(row, 10)
+        return c
+    }
+
+    private fun bubbleStoppedCard(): LinearLayout {
+        val c = card(this)
+        c.add(text(this, "⚠️ The bubble was stopped by your phone", 15.5f, C.ink, true))
+        c.add(text(this, "It's turned on in Accessibility but isn't running. Open Accessibility, turn MYchat Easy bubble off and on again, then allow background activity below so it doesn't stop again.", 13.5f, C.muted), 6)
+        val row = flow(this)
+        row.addView(primary(this, "Open Accessibility") { openAccessibilitySettings() })
+        if (!ignoringBattery()) row.addView(ghost(this, "Allow background activity") {
+            try { startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) } catch (e: Exception) { openAppInfo() }
+        })
+        c.add(row, 10)
+        return c
+    }
+
     // vivo, Xiaomi, Oppo, realme and others need an extra "pop-up windows" permission for the bubble to open the panel
     private fun popupBrand(): Boolean {
         val b = (android.os.Build.MANUFACTURER + " " + android.os.Build.BRAND).lowercase()
@@ -416,6 +450,8 @@ class MainActivity : Activity(), VoiceHost {
         tip.setOnClickListener { tab = "more"; render() }
         content.add(tip)
         if (!BubbleService.isEnabled(this)) content.add(bubbleCard(), 12)
+        else if (BubbleService.instance == null) content.add(bubbleStoppedCard(), 12)
+        else if (!ignoringBattery()) content.add(batteryCard(), 12)
         else if (s.popupBlocked || (popupBrand() && !getSharedPreferences("mychat_easy", MODE_PRIVATE).getBoolean("popupHintDone", false))) content.add(popupCard(), 12)
 
         if (Config.ORDER.none { s.hasKey(it) }) {
