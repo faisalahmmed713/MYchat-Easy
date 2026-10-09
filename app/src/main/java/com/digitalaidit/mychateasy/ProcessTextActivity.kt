@@ -28,6 +28,7 @@ class ProcessTextActivity : Activity(), VoiceHost {
 
         val action = intent?.action
         val fromBubble = action == ACTION_BUBBLE
+        if (fromBubble) BubbleService.instance?.panelOpened()
         val text = when (action) {
             Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)

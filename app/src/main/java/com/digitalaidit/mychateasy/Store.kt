@@ -116,6 +116,10 @@ class Store(ctx: Context) {
         set(v) = sp.edit().putLong("promoAt", v).apply()
 
     // ---------- floating bubble ----------
+    var popupBlocked: Boolean
+        get() = sp.getBoolean("popupBlocked", false)
+        set(v) = sp.edit().putBoolean("popupBlocked", v).apply()
+
     var bubbleOn: Boolean
         get() = sp.getBoolean("bubbleOn", true)
         set(v) = sp.edit().putBoolean("bubbleOn", v).apply()

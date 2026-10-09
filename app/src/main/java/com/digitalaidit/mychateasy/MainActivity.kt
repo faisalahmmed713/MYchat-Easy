@@ -128,6 +128,30 @@ class MainActivity : Activity(), VoiceHost {
         return c
     }
 
+    // vivo, Xiaomi, Oppo, realme and others need an extra "pop-up windows" permission for the bubble to open the panel
+    private fun popupBrand(): Boolean {
+        val b = (android.os.Build.MANUFACTURER + " " + android.os.Build.BRAND).lowercase()
+        return listOf("vivo", "iqoo", "xiaomi", "redmi", "poco", "oppo", "realme", "oneplus", "huawei", "honor", "tecno", "infinix", "itel").any { b.contains(it) }
+    }
+
+    private fun popupCard(): LinearLayout {
+        val c = card(this)
+        val blocked = s.popupBlocked
+        c.add(text(this, if (blocked) "⚠️ Allow pop-ups so the bubble can open" else "One more step for the bubble", 15.5f, C.ink, true))
+        c.add(text(this, (if (blocked) "Your phone stopped the bubble from opening MYchat Easy. " else "On ${android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} phones the bubble needs one extra permission. ") +
+            "Tap the button, open Permissions (or Other permissions), and allow \"Display pop-up windows while running in the background\" and \"Display over other apps\".", 13.5f, C.muted), 6)
+        val row = flow(this)
+        row.addView(primary(this, "Allow pop-ups") { openAppInfo() })
+        if (!blocked) row.addView(ghost(this, "Done") { s.popupBlocked = false; it_hidePopupHint() })
+        c.add(row, 10)
+        return c
+    }
+
+    private fun it_hidePopupHint() {
+        getSharedPreferences("mychat_easy", MODE_PRIVATE).edit().putBoolean("popupHintDone", true).apply()
+        render()
+    }
+
     private fun showBubbleDisclosure() {
         AlertDialog.Builder(this)
             .setTitle("Allow the MYchat Easy bubble")
@@ -392,6 +416,7 @@ class MainActivity : Activity(), VoiceHost {
         tip.setOnClickListener { tab = "more"; render() }
         content.add(tip)
         if (!BubbleService.isEnabled(this)) content.add(bubbleCard(), 12)
+        else if (s.popupBlocked || (popupBrand() && !getSharedPreferences("mychat_easy", MODE_PRIVATE).getBoolean("popupHintDone", false))) content.add(popupCard(), 12)
 
         if (Config.ORDER.none { s.hasKey(it) }) {
             val warn = card(this)

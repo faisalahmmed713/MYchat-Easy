@@ -36,6 +36,7 @@ class BubbleService : AccessibilityService() {
     private var target: AccessibilityNodeInfo? = null
     private var targetPkg = ""
     private var pending: Pending? = null
+    @Volatile private var panelShown = false
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -162,11 +163,27 @@ class BubbleService : AccessibilityService() {
         val hasSel = s >= 0 && e > s && e <= full.length
         pending = Pending(node, full, if (hasSel) s else 0, if (hasSel) e else full.length)
         hide()
+        panelShown = false
         val i = Intent(this, ProcessTextActivity::class.java)
             .setAction(ProcessTextActivity.ACTION_BUBBLE)
             .putExtra(ProcessTextActivity.EXTRA_TEXT, if (hasSel) full.substring(s, e) else full)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        startActivity(i)
+        try { startActivity(i) } catch (_: Exception) { }
+        // Some phones (vivo, Xiaomi, Oppo…) silently block apps from opening a screen from the background.
+        // If the panel didn't open, bring the bubble back and explain what to allow.
+        handler.postDelayed({
+            if (!panelShown) {
+                store.popupBlocked = true
+                refresh()
+                toast(this, "Your phone blocked the MYchat Easy panel. Open MYchat Easy › Home and tap \"Allow pop-ups\".")
+            }
+        }, 1800)
+    }
+
+    /** Called by the panel when it opens, so we know the phone allowed it. */
+    fun panelOpened() {
+        panelShown = true
+        if (store.popupBlocked) store.popupBlocked = false
     }
 
     /** Called by the panel when the user taps Replace or Use. */
