@@ -136,6 +136,13 @@ class MainActivity : Activity(), VoiceHost {
                 setOnCheckedChangeListener { _, v -> s.copyBar = v }
             }
             c.add(cb, 6)
+            c.add(text(this, "Copy a message in WhatsApp, Messenger or any app (long-press › Copy) and the Translate / Reply ideas toolbar appears.", 12.5f, C.muted), 4)
+            c.add(link(this, "Test the toolbar") {
+                copyText(this, "Can we meet tomorrow at 3 PM?")
+                val svc = BubbleService.instance
+                if (svc == null) toast(this, "The bubble isn't running. Turn it on in Accessibility first.")
+                else { svc.testCopyBar(); toast(this, "Toolbar shown at the bottom. Tap Translate or Reply ideas.") }
+            }, 4, ViewGroup.LayoutParams.WRAP_CONTENT)
         } else {
             c.add(text(this, "Turn it on once and a MYchat Easy bubble appears next to the text box in WhatsApp, Messenger, Facebook and every other app.", 13.5f, C.muted), 6)
             c.add(primary(this, "Turn on the bubble") { showBubbleDisclosure() }, 12)

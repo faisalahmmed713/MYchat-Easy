@@ -289,10 +289,34 @@ class BubbleService : AccessibilityService() {
     private var copyBarView: View? = null
     private val hideCopyBar = Runnable { removeCopyBar() }
 
-    private fun isCopyClick(e: AccessibilityEvent): Boolean {
-        val words = (e.text.map { it.toString() } + listOfNotNull(e.contentDescription?.toString())).map { it.trim() }
-        return words.any { COPY_WORDS.matches(it) }
+    // "Copy" in many forms: exact words, short labels that contain copy ("Copy message", "Copy text"),
+    // and buttons whose id says copy (e.g. WhatsApp's menuitem_copy), checked on the clicked view itself
+    private val COPY_CONTAINS = Regex("(^|\\b)(copy|কপি|复制|複製|copiar|copier|kopieren|копир|salin|kopyala|कॉपी|نسخ|کاپی)", RegexOption.IGNORE_CASE)
+    private val NOT_COPY = Regex("link|url|address|number|phone|code|email", RegexOption.IGNORE_CASE)
+
+    private fun looksLikeCopy(label: String?): Boolean {
+        val t = label?.trim() ?: return false
+        if (t.isEmpty() || t.length > 30) return false
+        if (COPY_WORDS.matches(t)) return true
+        return COPY_CONTAINS.containsMatchIn(t) && !NOT_COPY.containsMatchIn(t)
     }
+
+    private fun isCopyClick(e: AccessibilityEvent): Boolean {
+        if (e.text.any { looksLikeCopy(it?.toString()) } || looksLikeCopy(e.contentDescription?.toString())) return true
+        val src = try { e.source } catch (_: Exception) { null } ?: return false
+        if (looksLikeCopy(src.text?.toString()) || looksLikeCopy(src.contentDescription?.toString())) return true
+        val id = src.viewIdResourceName?.substringAfter(":id/")?.lowercase() ?: ""
+        if (id.contains("copy") && !NOT_COPY.containsMatchIn(id)) return true
+        // the click may land on a row whose child holds the label
+        for (i in 0 until minOf(src.childCount, 4)) {
+            val c = src.getChild(i) ?: continue
+            if (looksLikeCopy(c.text?.toString()) || looksLikeCopy(c.contentDescription?.toString())) return true
+        }
+        return false
+    }
+
+    /** For the app's "Test" button: show the toolbar now. */
+    fun testCopyBar() = handler.post { showCopyBar("test") }
 
     private fun showCopyBar(appPkg: String) {
         removeCopyBar()
