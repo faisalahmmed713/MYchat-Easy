@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.text.Editable
@@ -47,7 +48,7 @@ class MainActivity : Activity(), VoiceHost {
         s = Store(this)
         Account.appVersion = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
         CrashReport.install(this)
-        tab = intent?.getStringExtra("tab") ?: if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"
+        tab = intent?.getStringExtra("tab") ?: if (!s.setupDone) "setup" else if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"
 
         val root = vbox(this).apply { setBackgroundColor(C.panel) }
 
@@ -91,6 +92,7 @@ class MainActivity : Activity(), VoiceHost {
 
     override fun onResume() {
         super.onResume()
+        if (::content.isInitialized && tab == "setup") render()   // ticks off what was just allowed
         if (::content.isInitialized) CrashReport.showIfAny(this)
         if (::content.isInitialized && Account.signedIn(s)) Account.dailyCheckIn(this, s)
         if (::content.isInitialized && (tab == "home" || tab == "more")) render()
@@ -161,7 +163,72 @@ class MainActivity : Activity(), VoiceHost {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_MIC) render()
+        if (requestCode == REQ_MIC || requestCode == Setup.REQ_MIC || requestCode == Setup.REQ_NOTIF) render()
+        if (requestCode == Setup.REQ_NOTIF) BubbleService.instance?.applyKeepAlive()
+    }
+
+    // ---------- first-run setup wizard ----------
+    private fun renderSetup() {
+        val steps = Setup.steps()
+        val done = steps.count { Setup.isDone(this, it.id, s) }
+        val head = vbox(this).apply {
+            background = gradient(this@MainActivity, 18)
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+        }
+        head.add(text(this, "Set up MYchat Easy", 19f, Color.WHITE, true))
+        head.add(text(this, "Allow these once, and the bubble works in every app, even after you close the app or restart your phone.", 13.5f, 0xE6FFFFFF.toInt()), 4)
+        val bar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = steps.size; progress = done
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x55FFFFFF)
+        }
+        head.add(bar, 12)
+        head.add(text(this, "$done of ${steps.size} done", 12.5f, 0xD9FFFFFF.toInt(), true), 4)
+        content.add(head)
+
+        steps.forEach { st ->
+            val ok = Setup.isDone(this, st.id, s)
+            val c = card(this)
+            val top = hbox(this).apply { gravity = Gravity.TOP }
+            top.add(text(this, st.icon, 22f).apply { minWidth = dp(34) }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
+            val t = vbox(this)
+            val title = hbox(this)
+            title.add(text(this, st.title, 15.5f, C.ink, true), 0, 0, 1f)
+            title.add(text(this, if (ok) "✓ Done" else if (st.required) "Required" else "Recommended", 11.5f, if (ok) C.ok else if (st.required) C.err else C.muted, true).apply {
+                background = rounded(this@MainActivity, C.soft, 99, C.line); setPadding(dp(8), dp(2), dp(8), dp(2))
+            }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
+            t.add(title)
+            t.add(text(this, st.why, 13f, C.muted), 3)
+            if (!ok) {
+                val row = flow(this)
+                if (st.id != "lock") row.addView(primary(this, if (st.canCheck) "Allow" else "Open settings") { Setup.open(this, st.id) }.apply {
+                    setPadding(dp(16), dp(8), dp(16), dp(8))
+                })
+                if (!st.canCheck) row.addView(ghost(this, "I've done this") { Setup.markDone(s, st.id); render() })
+                t.add(row, 10)
+                if (st.id == "accessibility" && Build.VERSION.SDK_INT >= 33) {
+                    t.add(link(this, "Switch greyed out? Allow restricted settings") {
+                        toast(this, "Tap ⋮ (top right) › Allow restricted settings, then come back.")
+                        Setup.appInfo(this)
+                    }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
+                }
+                if (st.id == "accessibility") t.add(text(this, "In the list, open Installed apps (or Downloaded apps) › MYchat Easy bubble › On.", 12f, C.muted), 4)
+            }
+            top.add(t, 6, 0, 1f)
+            c.add(top)
+            content.add(c, 10)
+        }
+
+        val requiredOk = Setup.allRequiredDone(this, s)
+        val finish = primary(this, if (requiredOk) "Finish setup" else "Finish the required steps first") {
+            if (!Setup.allRequiredDone(this, s)) { toast(this, "Turn on the bubble and remove battery limits first."); return@primary }
+            s.setupDone = true
+            tab = if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"
+            render()
+        }
+        if (!requiredOk) finish.alpha = 0.6f
+        content.add(finish, 18)
+        content.add(link(this, "Skip for now") { s.setupDone = true; tab = if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"; render() }.apply { setTextColor(C.muted) }, 6, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     // ---------- "always on" checklist ----------
@@ -323,8 +390,10 @@ class MainActivity : Activity(), VoiceHost {
         val p = s.provider
         activeLine.text = "${Config.provider(p).label} · ${s.model(p)}"
         renderNav()
+        nav.visibility = if (tab == "setup") View.GONE else View.VISIBLE
         content.removeAllViews()
         when (tab) {
+            "setup" -> renderSetup()
             "home" -> renderHome()
             "ai" -> renderAi()
             "lang" -> renderLang()
@@ -389,7 +458,7 @@ class MainActivity : Activity(), VoiceHost {
             try {
                 Account.signIn(this, s) { err ->
                     gbtn.isEnabled = true
-                    if (err == null) { toast(this, "Signed in as ${s.accountEmail}"); tab = if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"; render() }
+                    if (err == null) { toast(this, "Signed in as ${s.accountEmail}"); tab = if (!s.setupDone) "setup" else if (Config.ORDER.none { s.hasKey(it) }) "ai" else "home"; render() }
                     else { status.text = err; status.setTextColor(0xFFFF8A96.toInt()) }
                 }
             } catch (e: Throwable) {
@@ -769,6 +838,12 @@ class MainActivity : Activity(), VoiceHost {
     // ---------- More ----------
     private fun renderMore() {
         accountAndFeedback()
+        section("Setup")
+        val su = card(this)
+        val st = Setup.steps(); val dn = st.count { Setup.isDone(this, it.id, s) }
+        su.add(text(this, "Permissions: $dn of ${st.size} done", 14.5f, C.ink, true))
+        su.add(link(this, "Open setup") { tab = "setup"; render() }, 4, ViewGroup.LayoutParams.WRAP_CONTENT)
+        content.add(su, 8)
         section("Floating bubble")
         content.add(bubbleCard(), 8)
         val hidden = s.bubbleHidden

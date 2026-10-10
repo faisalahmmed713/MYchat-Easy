@@ -115,6 +115,11 @@ class Store(ctx: Context) {
         get() = sp.getLong("promoAt", 0L)
         set(v) = sp.edit().putLong("promoAt", v).apply()
 
+    // ---------- first-run setup wizard ----------
+    var setupDone: Boolean
+        get() = sp.getBoolean("setupDone", false)
+        set(v) = sp.edit().putBoolean("setupDone", v).apply()
+
     // ---------- keep the bubble alive with a small notification ----------
     var keepAlive: Boolean
         get() = sp.getBoolean("keepAlive", true)
