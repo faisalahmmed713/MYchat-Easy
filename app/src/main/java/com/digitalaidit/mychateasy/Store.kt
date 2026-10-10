@@ -115,6 +115,11 @@ class Store(ctx: Context) {
         get() = sp.getLong("promoAt", 0L)
         set(v) = sp.edit().putLong("promoAt", v).apply()
 
+    // ---------- keep the bubble alive with a small notification ----------
+    var keepAlive: Boolean
+        get() = sp.getBoolean("keepAlive", true)
+        set(v) = sp.edit().putBoolean("keepAlive", v).apply()
+
     // ---------- toolbar after Copy ----------
     var copyBar: Boolean
         get() = sp.getBoolean("copyBar", true)

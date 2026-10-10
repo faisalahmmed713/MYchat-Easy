@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- "Keep alive": the bubble runs as a foreground service with a quiet notification -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Voice input inside the bubble panel (asked only when the user taps Allow microphone) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Lets the user exempt the app from battery limits so the bubble keeps working -->
@@ -62,7 +66,11 @@
             android:name=".BubbleService"
             android:exported="false"
             android:label="@string/bubble_label"
+            android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the writing assistant bubble available over other apps" />
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>

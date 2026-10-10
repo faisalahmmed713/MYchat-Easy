@@ -46,6 +46,49 @@ class BubbleService : AccessibilityService() {
         C.init(this)
         CrashReport.install(this)
         handler.post(check)
+        applyKeepAlive()
+    }
+
+    // ---------- keep alive: a quiet ongoing notification makes phones much less likely to stop the bubble ----------
+    var keepAliveActive = false
+        private set
+
+    fun applyKeepAlive() {
+        if (store.keepAlive) startKeepAlive() else stopKeepAlive()
+    }
+
+    private fun startKeepAlive() {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            if (android.os.Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
+                nm.createNotificationChannel(android.app.NotificationChannel(CHANNEL, "Bubble status", android.app.NotificationManager.IMPORTANCE_MIN).apply {
+                    description = "Keeps the MYchat Easy bubble ready in every app"
+                    setShowBadge(false)
+                })
+            }
+            val open = android.app.PendingIntent.getActivity(this, 0,
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+            val iconId = resources.getIdentifier("ic_launcher_foreground", "mipmap", packageName).takeIf { it != 0 } ?: applicationInfo.icon
+            val n = android.app.Notification.Builder(this, CHANNEL)
+                .setSmallIcon(iconId)
+                .setContentTitle("MYchat Easy bubble is ready")
+                .setContentText("Tap a text box in any app to translate, rewrite or reply.")
+                .setContentIntent(open)
+                .setOngoing(true)
+                .setShowWhen(false)
+                .build()
+            if (android.os.Build.VERSION.SDK_INT >= 29) startForeground(NOTIF_ID, n, FGS_SPECIAL_USE)
+            else startForeground(NOTIF_ID, n)
+            keepAliveActive = true
+        } catch (e: Throwable) {
+            keepAliveActive = false   // the phone didn't allow it; the bubble still works
+        }
+    }
+
+    private fun stopKeepAlive() {
+        try { if (android.os.Build.VERSION.SDK_INT >= 24) stopForeground(android.app.Service.STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true) } catch (_: Throwable) { }
+        keepAliveActive = false
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -514,6 +557,9 @@ class BubbleService : AccessibilityService() {
     }
 
     companion object {
+        private const val CHANNEL = "bubble"
+        private const val NOTIF_ID = 42
+        private const val FGS_SPECIAL_USE = 0x40000000   // ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE (Android 14)
         private const val BUBBLE = 40
         private const val PAD = 6
         var instance: BubbleService? = null

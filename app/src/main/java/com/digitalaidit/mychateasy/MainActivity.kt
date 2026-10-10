@@ -122,6 +122,13 @@ class MainActivity : Activity(), VoiceHost {
                 setOnCheckedChangeListener { _, v -> s.bubbleOn = v }
             }
             c.add(sw, 10)
+            val ka = Switch(this).apply {
+                text = "Keep alive (small notification, recommended)"
+                setTextColor(C.ink)
+                isChecked = s.keepAlive
+                setOnCheckedChangeListener { _, v -> s.keepAlive = v; BubbleService.instance?.applyKeepAlive() }
+            }
+            c.add(ka, 6)
             val cb = Switch(this).apply {
                 text = "Show Translate / Reply ideas after I copy a message"
                 setTextColor(C.ink)
@@ -148,6 +155,38 @@ class MainActivity : Activity(), VoiceHost {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_MIC) render()
+    }
+
+    // ---------- "always on" checklist ----------
+    private fun pausedIfUnused(): Boolean = try {
+        android.os.Build.VERSION.SDK_INT >= 30 && !packageManager.isAutoRevokeWhitelisted
+    } catch (e: Exception) { false }
+
+    private fun allAlwaysOn(): Boolean =
+        BubbleService.isEnabled(this) && BubbleService.instance != null && ignoringBattery() && !pausedIfUnused() &&
+            (!s.keepAlive || BubbleService.instance?.keepAliveActive == true)
+
+    private fun alwaysOnCard(): LinearLayout {
+        val c = card(this)
+        c.add(text(this, "Keep MYchat Easy always on", 15.5f, C.ink, true))
+        c.add(text(this, "Finish these so your phone never stops the bubble.", 13f, C.muted), 2)
+        fun item(ok: Boolean, label: String, button: String?, action: (() -> Unit)?) {
+            val row = hbox(this)
+            row.add(text(this, if (ok) "✓" else "✗", 16f, if (ok) C.ok else C.err, true).apply { minWidth = dp(24) }, 0, ViewGroup.LayoutParams.WRAP_CONTENT)
+            row.add(text(this, label, 14f), 4, 0, 1f)
+            if (!ok && button != null && action != null) row.add(link(this, button) { action() }, 4, ViewGroup.LayoutParams.WRAP_CONTENT)
+            c.add(row, 8)
+        }
+        item(BubbleService.instance != null, "Bubble is running", "Open", { openAccessibilitySettings() })
+        item(ignoringBattery(), "No battery limits", "Allow", {
+            try { startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) } catch (e: Exception) { openAppInfo() }
+        })
+        if (android.os.Build.VERSION.SDK_INT >= 30) item(!pausedIfUnused(), "\"Pause app activity if unused\" is off", "Turn off", {
+            try { startActivity(Intent("android.intent.action.AUTO_REVOKE_PERMISSIONS", Uri.parse("package:$packageName"))) } catch (e: Exception) { openAppInfo() }
+        })
+        item(!s.keepAlive || BubbleService.instance?.keepAliveActive == true, "Keep-alive notification", null, null)
+        c.add(text(this, "On vivo, also: Settings › Battery › Background power consumption › MYchat Easy › Allow, turn on Auto-start for MYchat Easy, and lock it in Recent apps.", 12.5f, C.muted), 10)
+        return c
     }
 
     // ---------- keeping the bubble running ----------
@@ -473,7 +512,7 @@ class MainActivity : Activity(), VoiceHost {
         if (!BubbleService.isEnabled(this)) content.add(tip)   // once the bubble is turned on, this hint isn't needed
         if (!BubbleService.isEnabled(this)) content.add(bubbleCard(), 12)
         else if (BubbleService.instance == null) content.add(bubbleStoppedCard(), 12)
-        else if (!ignoringBattery()) content.add(batteryCard(), 12)
+        else if (!allAlwaysOn()) content.add(alwaysOnCard(), 12)
         if (BubbleService.isEnabled(this) && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) content.add(micCard(), 12)
 
         if (Config.ORDER.none { s.hasKey(it) }) {
